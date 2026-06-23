@@ -1,0 +1,15 @@
+node_modules/
+backups/
+_query_*.ps1
+_migrate_*.ps1
+# Generated locally by `npm run migrate` (rebuilt from inventory.accdb / tracker_data.json)
+inventory.db-wal
+inventory.db-shm
+*.log
+*.png
+*.json-bak
+temp/
+.idea/
+.vscode/
+.gemini/
+*.tmp

@@ -1,0 +1,765 @@
+        // State management from API
+        let items = [];
+        let searchQuery = '';
+
+        // DOM Elements
+        const addForm = document.getElementById('addForm');
+        const tableBody = document.getElementById('tableBody');
+        const emptyState = document.getElementById('emptyState');
+        const receiveModal = document.getElementById('receiveModal');
+        const receiveForm = document.getElementById('receiveForm');
+        const searchInput = document.getElementById('searchInput');
+
+        // Initial Load
+        async function loadItems() {
+            try {
+                const res = await fetch('/api/items');
+                if (!res.ok) throw new Error('Failed to load');
+                items = await res.json();
+                
+                // Ensure recQty, recDate are computed correctly
+                items.forEach(item => {
+                    item.name = item.itemName; // Map itemName to name for UI
+                    recalcItemReceipts(item);
+                });
+                renderTable();
+            } catch (e) {
+                console.error(e);
+                alert('Error loading items from database.');
+            }
+        }
+
+        // Search listener
+        searchInput.addEventListener('input', (e) => {
+            searchQuery = e.target.value.toLowerCase();
+            renderTable();
+        });
+
+        // Set default date to today for the request form
+        document.getElementById('reqDate').valueAsDate = new Date();
+
+        // Format currency as Rs.
+        function formatCurrency(amount) {
+            if (amount === null || amount === undefined || isNaN(amount)) return '-';
+            return 'Rs. ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function calculateDateGap(reqDate, recDate) {
+            if (!recDate) return '<span class="text-slate-400">-</span>';
+            const d1 = new Date(reqDate);
+            const d2 = new Date(recDate);
+            const diffTime = d2 - d1;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            
+            if (diffDays < 0) return `<span class="text-green-600 font-medium">${Math.abs(diffDays)} days early</span>`;
+            if (diffDays === 0) return `<span class="text-blue-600 font-medium">Same day</span>`;
+            return `<span class="text-orange-600 font-medium">${diffDays} days delay</span>`;
+        }
+
+        function getStatusBadge(reqQty, recQty) {
+            if (recQty === 0) return '<span class="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-slate-100 text-slate-800 border border-slate-200">Pending</span>';
+            if (recQty < reqQty) return '<span class="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-50 text-yellow-700 border border-yellow-200">Partial</span>';
+            if (recQty === reqQty) return '<span class="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-50 text-green-700 border border-green-200">Complete</span>';
+            if (recQty > reqQty) return '<span class="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-50 text-purple-700 border border-purple-200">Over-received</span>';
+        }
+
+        // Get pricing info for an item across all receipts
+        function getItemPricingInfo(item) {
+            const receipts = item.receipts || [];
+            let totalCost = 0;
+            const suppliers = new Set();
+            const grns = new Set();
+            let hasPricing = false;
+
+            receipts.forEach(r => {
+                if (r.unitPrice && r.qty > 0) {
+                    totalCost += Math.abs(r.qty) * r.unitPrice;
+                    hasPricing = true;
+                }
+                if (r.supplierName) suppliers.add(r.supplierName);
+                if (r.grnNumber) grns.add(r.grnNumber);
+            });
+
+            return {
+                totalCost: Math.round(totalCost * 100) / 100,
+                suppliers: [...suppliers],
+                grns: [...grns],
+                hasPricing
+            };
+        }
+
+        function renderTable() {
+            tableBody.innerHTML = '';
+            
+            const filteredItems = items.map((item, index) => ({ item, index })).filter(({item}) => {
+                if (!searchQuery) return true;
+                const matchName = item.name && item.name.toLowerCase().includes(searchQuery);
+                const matchMRN = item.mrnNum && item.mrnNum.toLowerCase().includes(searchQuery);
+                const matchVehicle = item.vehicleMachinery && item.vehicleMachinery.toLowerCase().includes(searchQuery);
+                // Extended search: GRN, Invoice, Supplier
+                const receipts = item.receipts || [];
+                const matchGRN = receipts.some(r => r.grnNumber && r.grnNumber.toLowerCase().includes(searchQuery));
+                const matchInvoice = receipts.some(r => r.invoiceNumber && r.invoiceNumber.toLowerCase().includes(searchQuery));
+                const matchSupplier = receipts.some(r => r.supplierName && r.supplierName.toLowerCase().includes(searchQuery));
+                return matchName || matchMRN || matchVehicle || matchGRN || matchInvoice || matchSupplier;
+            });
+
+            if (filteredItems.length === 0) {
+                emptyState.classList.remove('hidden');
+                emptyState.innerText = items.length === 0 ? "No items tracked yet. Add a request above to get started." : "No items match your search.";
+            } else {
+                emptyState.classList.add('hidden');
+            }
+
+            filteredItems.forEach(({item, index}) => {
+                const qtyGap = Math.round((item.reqQty - item.recQty) * 100) / 100;
+                const dateGap = calculateDateGap(item.reqDate, item.recDate);
+                const status = getStatusBadge(item.reqQty, item.recQty);
+                const pricing = getItemPricingInfo(item);
+
+                let qtyGapHtml = `<span class="text-slate-400">-</span>`;
+                if (item.recQty > 0) {
+                    if (qtyGap > 0) {
+                        qtyGapHtml = `<span class="text-red-600 font-semibold">${qtyGap} short</span>`;
+                    } else if (qtyGap < 0) {
+                        qtyGapHtml = `<span class="text-purple-600 font-semibold">${Math.abs(qtyGap)} extra</span>`;
+                    } else {
+                        qtyGapHtml = `<span class="text-green-600 font-semibold">Match</span>`;
+                    }
+                }
+
+                // Build pricing cell content
+                let pricingHtml = '';
+                if (pricing.hasPricing) {
+                    pricingHtml = `
+                        <div class="text-sm font-semibold text-emerald-700">${formatCurrency(pricing.totalCost)}</div>
+                        ${pricing.suppliers.length > 0 ? `<div class="text-xs text-slate-500 truncate max-w-[140px]" title="${pricing.suppliers.join(', ')}">${pricing.suppliers.join(', ')}</div>` : ''}
+                        ${pricing.grns.length > 0 ? `<div class="text-[10px] text-indigo-600 uppercase tracking-wide mt-0.5 font-semibold truncate max-w-[140px]" title="GRN: ${pricing.grns.join(', ')}">GRN: ${pricing.grns.join(', ')}</div>` : ''}
+                    `;
+                } else {
+                    pricingHtml = `<span class="text-slate-400 text-xs italic">No pricing</span>`;
+                }
+
+                const row = `
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-semibold text-slate-800">${item.mrnNum || '-'}</div>
+                            <div class="text-xs text-slate-500">${item.vehicleMachinery || '-'}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-semibold text-slate-800">${item.name}</div>
+                            <div class="text-xs text-slate-500 truncate max-w-[150px]" title="${item.itemDesc || ''}">${item.itemDesc || '-'}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-medium text-slate-900">${item.reqQty}</div>
+                            <div class="text-xs text-slate-500">${item.reqDate}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-medium ${item.recQty > 0 ? 'text-slate-900' : 'text-slate-400'}">${item.recQty > 0 ? item.recQty : '0'}</div>
+                            <div class="text-xs text-slate-500">${item.recDate || 'Not received'} ${item.receipts && item.receipts.length > 1 ? `(${item.receipts.length} deliveries)` : ''}</div>
+                            ${item.purchaseSource ? `<div class="text-[10px] uppercase tracking-wide mt-1 font-semibold text-indigo-600">${item.purchaseSource}</div>` : ''}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <div class="mb-1">${qtyGapHtml}</div>
+                            <div>${dateGap}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            ${pricingHtml}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            ${status}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button onclick="openModal(${index})" class="text-blue-600 hover:text-blue-900 bg-blue-50 px-3 py-1 rounded-md hover:bg-blue-100 transition mr-2">Update</button>
+                            <button onclick="deleteItem(${index})" class="text-red-600 hover:text-red-900 p-1 rounded-md hover:bg-red-50 transition" title="Delete">
+                                <svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+
+            // Also update pricing summary
+            renderPricingSummary();
+        }
+
+        // Pricing Summary
+        function renderPricingSummary() {
+            let totalSpend = 0;
+            const supplierSpend = {};
+            let pricedCount = 0;
+            let unpricedReceivedCount = 0;
+
+            items.forEach(item => {
+                const receipts = item.receipts || [];
+                let itemHasPricing = false;
+
+                receipts.forEach(r => {
+                    if (r.unitPrice && r.qty > 0) {
+                        const cost = Math.abs(r.qty) * r.unitPrice;
+                        totalSpend += cost;
+                        itemHasPricing = true;
+                        const supplier = r.supplierName || 'Unknown Supplier';
+                        supplierSpend[supplier] = (supplierSpend[supplier] || 0) + cost;
+                    }
+                });
+
+                if (item.recQty > 0) {
+                    if (itemHasPricing) pricedCount++;
+                    else unpricedReceivedCount++;
+                }
+            });
+
+            document.getElementById('totalSpendValue').textContent = formatCurrency(Math.round(totalSpend * 100) / 100);
+            document.getElementById('supplierCountValue').textContent = Object.keys(supplierSpend).length;
+            document.getElementById('pricedItemsValue').textContent = pricedCount;
+            document.getElementById('unpricedItemsValue').textContent = unpricedReceivedCount;
+
+            const breakdownEl = document.getElementById('supplierBreakdown');
+            if (Object.keys(supplierSpend).length > 0) {
+                const sorted = Object.entries(supplierSpend).sort((a, b) => b[1] - a[1]);
+                breakdownEl.innerHTML = `
+                    <h4 class="text-sm font-semibold text-slate-600 mb-3">Spend by Supplier</h4>
+                    <div class="space-y-2">
+                        ${sorted.map(([name, amount]) => {
+                            const pct = totalSpend > 0 ? ((amount / totalSpend) * 100).toFixed(1) : 0;
+                            return `
+                            <div class="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                                <div class="flex justify-between items-center mb-1.5">
+                                    <span class="text-sm font-medium text-slate-700">${name}</span>
+                                    <span class="text-sm font-bold text-slate-800">${formatCurrency(Math.round(amount * 100) / 100)}</span>
+                                </div>
+                                <div class="w-full bg-slate-200 rounded-full h-1.5">
+                                    <div class="bg-emerald-500 h-1.5 rounded-full transition-all" style="width: ${pct}%"></div>
+                                </div>
+                                <div class="text-[10px] text-slate-500 mt-1 text-right">${pct}%</div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                `;
+            } else {
+                breakdownEl.innerHTML = '<p class="text-sm text-slate-400 mt-2">No pricing data recorded yet.</p>';
+            }
+        }
+
+        // Add new item via API
+        addForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = addForm.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.innerText = 'Adding...';
+
+            const newItem = {
+                mrnNum: document.getElementById('mrnNum').value,
+                reqDate: document.getElementById('reqDate').value,
+                vehicleMachinery: document.getElementById('vehicleMachinery').value,
+                itemName: document.getElementById('itemName').value,
+                itemDesc: document.getElementById('itemDesc').value,
+                reqQty: parseFloat(document.getElementById('reqQty').value)
+            };
+
+            try {
+                const res = await fetch('/api/items', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(newItem)
+                });
+                if (!res.ok) throw new Error('Failed to add');
+                await loadItems(); // Refresh full state
+                addForm.reset();
+                document.getElementById('reqDate').valueAsDate = new Date();
+            } catch (e) {
+                alert('Error adding item.');
+                console.error(e);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Add Request';
+            }
+        });
+
+        // Modal Logic
+        function openModal(index) {
+            const item = items[index];
+            document.getElementById('editIndex').value = index;
+            document.querySelector('#modalItemName strong').innerText = item.name;
+            
+            document.getElementById('recQty').value = '';
+            document.getElementById('recDate').value = new Date().toISOString().split('T')[0];
+            document.querySelectorAll('input[name="purchaseSourceRadio"]').forEach(r => r.checked = false);
+            const receiveRadio = document.querySelector('input[name="transactionType"][value="Receive"]');
+            if (receiveRadio) receiveRadio.checked = true;
+
+            // Reset pricing fields
+            document.getElementById('grnNumber').value = '';
+            document.getElementById('invoiceNumber').value = '';
+            document.getElementById('invoiceDate').value = '';
+            document.getElementById('supplierName').value = '';
+            document.getElementById('unitPrice').value = '';
+            document.getElementById('totalPriceDisplay').textContent = 'Rs. 0.00';
+
+            // Collapse pricing section by default
+            const pricingSection = document.getElementById('pricingSection');
+            const pricingChevron = document.getElementById('pricingChevron');
+            pricingSection.classList.remove('open');
+            pricingChevron.classList.remove('open');
+
+            const historyContainer = document.getElementById('receiptHistoryContainer');
+            const historyList = document.getElementById('receiptHistoryList');
+            const receipts = item.receipts || [];
+
+            if (receipts.length > 0) {
+                historyContainer.classList.remove('hidden');
+                historyList.innerHTML = receipts.map((r, i) => `
+                    <div class="border-b border-slate-200 last:border-0 pb-2 last:pb-0 mb-2 last:mb-0">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <span class="font-medium ${r.transactionType === 'Return' ? 'text-red-600' : 'text-slate-700'}">
+                                    ${r.transactionType === 'Return' ? 'Returned: ' : ''}${Math.abs(r.qty)}
+                                </span>
+                                <span class="text-xs text-slate-500 mx-1">on</span>
+                                <span class="text-slate-600">${r.deliveryDate}</span>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-[10px] uppercase tracking-wide font-semibold text-indigo-600">${r.purchaseSource}</span>
+                                <button type="button" onclick="deleteReceipt(${index}, ${i})" class="ml-3 text-red-400 hover:text-red-600" title="Delete this delivery">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+                        ${(r.grnNumber || r.invoiceNumber || r.supplierName || r.unitPrice) ? `
+                            <div class="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[11px] text-slate-500">
+                                ${r.grnNumber ? `<span>GRN: <strong class="text-slate-600">${r.grnNumber}</strong></span>` : ''}
+                                ${r.invoiceNumber ? `<span>INV: <strong class="text-slate-600">${r.invoiceNumber}</strong></span>` : ''}
+                                ${r.invoiceDate ? `<span>Inv Date: <strong class="text-slate-600">${r.invoiceDate}</strong></span>` : ''}
+                                ${r.supplierName ? `<span>Supplier: <strong class="text-slate-600">${r.supplierName}</strong></span>` : ''}
+                                ${r.unitPrice ? `<span class="text-emerald-700 font-semibold">${formatCurrency(r.unitPrice)} × ${Math.abs(r.qty)} = ${formatCurrency(Math.abs(r.qty) * r.unitPrice)}</span>` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+            } else {
+                historyContainer.classList.add('hidden');
+            }
+            
+            receiveModal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            receiveModal.classList.add('hidden');
+        }
+
+        receiveForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = receiveForm.querySelector('button[type="submit"]');
+            btn.disabled = true;
+            btn.innerText = 'Saving...';
+
+            const index = document.getElementById('editIndex').value;
+            const item = items[index];
+            const rawQty = parseFloat(document.getElementById('recQty').value);
+            const newDate = document.getElementById('recDate').value;
+            const selectedRadio = document.querySelector('input[name="purchaseSourceRadio"]:checked');
+            const newSource = selectedRadio ? selectedRadio.value : '';
+            
+            const typeRadio = document.querySelector('input[name="transactionType"]:checked');
+            const type = typeRadio ? typeRadio.value : 'Receive';
+            const newQty = type === 'Return' ? -Math.abs(rawQty) : Math.abs(rawQty);
+
+            // Capture pricing fields
+            const grnNumber = document.getElementById('grnNumber').value.trim();
+            const invoiceNumber = document.getElementById('invoiceNumber').value.trim();
+            const invoiceDate = document.getElementById('invoiceDate').value;
+            const supplierName = document.getElementById('supplierName').value.trim();
+            const unitPriceVal = parseFloat(document.getElementById('unitPrice').value);
+            const unitPrice = isNaN(unitPriceVal) ? null : unitPriceVal;
+
+            const receiptEntry = {
+                qty: newQty,
+                transactionType: type,
+                deliveryDate: newDate,
+                purchaseSource: newSource,
+                grnNumber: grnNumber || '',
+                invoiceNumber: invoiceNumber || '',
+                invoiceDate: invoiceDate || '',
+                supplierName: supplierName || '',
+                unitPrice: unitPrice
+            };
+
+            try {
+                const res = await fetch(`/api/items/${item.id}/receipts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(receiptEntry)
+                });
+                if (!res.ok) throw new Error('Failed to save receipt');
+                await loadItems();
+                closeModal();
+            } catch (err) {
+                alert('Failed to save receipt');
+                console.error(err);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Save Delivery';
+            }
+        });
+
+        async function deleteReceipt(itemIndex, receiptIndex) {
+            if (confirm("Delete this delivery record?")) {
+                const item = items[itemIndex];
+                const receipt = item.receipts[receiptIndex];
+                
+                try {
+                    const res = await fetch(`/api/receipts/${receipt.id}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to delete receipt');
+                    await loadItems();
+                    
+                    // re-open modal to reflect changes
+                    const newItemIndex = items.findIndex(i => i.id === item.id);
+                    if (newItemIndex !== -1) openModal(newItemIndex);
+                } catch (e) {
+                    alert('Error deleting receipt');
+                    console.error(e);
+                }
+            }
+        }
+
+        function recalcItemReceipts(item) {
+            if (!item.receipts || item.receipts.length === 0) {
+                item.recQty = 0;
+                item.recDate = null;
+                item.purchaseSource = '';
+                return;
+            }
+            item.recQty = item.receipts.reduce((sum, r) => sum + r.qty, 0);
+            item.recQty = Math.round(item.recQty * 100) / 100;
+            const sorted = [...item.receipts].sort((a, b) => new Date(b.deliveryDate) - new Date(a.deliveryDate));
+            item.recDate = sorted[0].deliveryDate;
+            const uniqueSources = [...new Set(item.receipts.map(r => r.purchaseSource).filter(Boolean))];
+            item.purchaseSource = uniqueSources.join(' & ');
+        }
+
+        async function deleteItem(index) {
+            if(confirm('Are you sure you want to delete this record?')) {
+                const item = items[index];
+                try {
+                    const res = await fetch(`/api/items/${item.id}`, { method: 'DELETE' });
+                    if (!res.ok) throw new Error('Failed to delete item');
+                    await loadItems();
+                } catch (e) {
+                    alert('Error deleting item');
+                    console.error(e);
+                }
+            }
+        }
+
+        // Toggle collapsible sections
+        function togglePricingSection() {
+            const section = document.getElementById('pricingSection');
+            const chevron = document.getElementById('pricingChevron');
+            section.classList.toggle('open');
+            chevron.classList.toggle('open');
+        }
+
+        function toggleSummarySection() {
+            const section = document.getElementById('summarySection');
+            const chevron = document.getElementById('summaryChevron');
+            section.classList.toggle('open');
+            chevron.classList.toggle('open');
+        }
+
+        // Auto-calculate total price
+        function updateTotalPrice() {
+            const qty = parseFloat(document.getElementById('recQty').value) || 0;
+            const unitPrice = parseFloat(document.getElementById('unitPrice').value) || 0;
+            const total = qty * unitPrice;
+            document.getElementById('totalPriceDisplay').textContent = formatCurrency(total);
+        }
+
+        document.getElementById('recQty').addEventListener('input', updateTotalPrice);
+        document.getElementById('unitPrice').addEventListener('input', updateTotalPrice);
+
+        // Import / Export Logic
+        function exportCSV() {
+            if (items.length === 0) {
+                alert("No data to export!");
+                return;
+            }
+            
+            const headers = ["MRN Number", "Request Date", "Vehicle/Machinery", "Item Name", "Item Description", "Requested Qty", "Received Qty", "Receive Date", "Purchase Source", "Qty Gap", "Date Gap (Days)", "Status", "GRN Number", "Invoice Number", "Invoice Date", "Supplier Name", "Unit Price", "Total Price"];
+            const rows = items.map(item => {
+                const qtyGap = Math.round((item.reqQty - item.recQty) * 100) / 100;
+                
+                // Calculate date gap in days just for CSV
+                let dateGapDays = '';
+                if (item.recDate) {
+                    const d1 = new Date(item.reqDate);
+                    const d2 = new Date(item.recDate);
+                    dateGapDays = Math.ceil((d2 - d1) / (1000 * 60 * 60 * 24));
+                }
+                
+                let status = "Pending";
+                if (item.recQty > 0) {
+                    if (item.recQty < item.reqQty) status = "Partial";
+                    else if (item.recQty === item.reqQty) status = "Complete";
+                    else status = "Over-received";
+                }
+
+                // Aggregate pricing info from receipts
+                const receipts = item.receipts || [];
+                const grns = [...new Set(receipts.map(r => r.grnNumber).filter(Boolean))].join('; ');
+                const invoiceNums = [...new Set(receipts.map(r => r.invoiceNumber).filter(Boolean))].join('; ');
+                const invoiceDates = [...new Set(receipts.map(r => r.invoiceDate).filter(Boolean))].filter(d => d && d !== '1899-12-30').join('; ');
+                const suppliers = [...new Set(receipts.map(r => r.supplierName).filter(Boolean))].join('; ');
+                
+                let totalUnitPrice = '';
+                let totalPrice = '';
+                const pricedReceipts = receipts.filter(r => r.unitPrice);
+                if (pricedReceipts.length > 0) {
+                    if (pricedReceipts.length === 1) {
+                        totalUnitPrice = pricedReceipts[0].unitPrice;
+                    } else {
+                        totalUnitPrice = pricedReceipts.map(r => r.unitPrice).join('; ');
+                    }
+                    totalPrice = receipts.reduce((sum, r) => {
+                        if (r.unitPrice && r.qty > 0) return sum + (Math.abs(r.qty) * r.unitPrice);
+                        return sum;
+                    }, 0);
+                    totalPrice = Math.round(totalPrice * 100) / 100;
+                }
+
+                return [
+                    `"${(item.mrnNum || '').replace(/"/g, '""')}"`,
+                    item.reqDate,
+                    `"${(item.vehicleMachinery || '').replace(/"/g, '""')}"`,
+                    `"${item.name.replace(/"/g, '""')}"`,
+                    `"${(item.itemDesc || '').replace(/"/g, '""')}"`,
+                    item.reqQty,
+                    item.recQty,
+                    item.recDate || '',
+                    `"${(item.purchaseSource || '').replace(/"/g, '""')}"`,
+                    qtyGap,
+                    dateGapDays,
+                    status,
+                    `"${grns.replace(/"/g, '""')}"`,
+                    `"${invoiceNums.replace(/"/g, '""')}"`,
+                    `"${invoiceDates.replace(/"/g, '""')}"`,
+                    `"${suppliers.replace(/"/g, '""')}"`,
+                    totalUnitPrice,
+                    totalPrice
+                ].join(",");
+            });
+            
+            const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `delivery_monitor_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function exportJSON() {
+            if (items.length === 0) {
+                alert("No data to export!");
+                return;
+            }
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(items, null, 2));
+            const link = document.createElement("a");
+            link.setAttribute("href", dataStr);
+            link.setAttribute("download", `tracker_backup_${new Date().toISOString().split('T')[0]}.json`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        async function doImport(dataToImport) {
+            try {
+                const res = await fetch('/api/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dataToImport)
+                });
+                if (!res.ok) throw new Error('Import failed');
+                await loadItems();
+                alert('Import successful!');
+            } catch (e) {
+                console.error(e);
+                alert('Import failed.');
+            }
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (Array.isArray(importedData)) {
+                        const isValid = importedData.every(i => (i.name || i.itemName) && i.reqQty !== undefined && i.reqDate !== undefined);
+                        if (isValid) {
+                            if (confirm(`Successfully read ${importedData.length} items. Do you want to import this data?`)) {
+                                doImport(importedData);
+                            }
+                        } else {
+                            alert("Invalid backup file structure.");
+                        }
+                    } else {
+                        alert("Invalid backup format. Must be a JSON array.");
+                    }
+                } catch (error) {
+                    alert("Error parsing the file. Make sure it's a valid JSON backup.");
+                }
+                event.target.value = ''; // Reset input
+            };
+            reader.readAsText(file);
+        }
+
+        function importCSV(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const text = e.target.result;
+                    const parsedItems = parseCSV(text);
+                    if (parsedItems.length > 0) {
+                        if (confirm(`Successfully read ${parsedItems.length} items from CSV. Do you want to import this data?`)) {
+                            doImport(parsedItems);
+                        }
+                    } else {
+                        alert("No valid items found in the CSV.");
+                    }
+                } catch (error) {
+                    console.error("CSV Import Error:", error);
+                    alert("Error parsing the CSV file. Please make sure it has headers for 'Item Name' and 'Requested Qty'.");
+                }
+                event.target.value = ''; // Reset input
+            };
+            reader.readAsText(file);
+        }
+
+        function parseCSV(text) {
+            const lines = [];
+            let currentLine = [];
+            let currentCell = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i+1];
+                
+                if (char === '"') {
+                    if (inQuotes && nextChar === '"') {
+                        currentCell += '"';
+                        i++; // skip escaped quote
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    currentLine.push(currentCell.trim());
+                    currentCell = '';
+                } else if (char === '\n' && !inQuotes) {
+                    currentLine.push(currentCell.trim());
+                    lines.push(currentLine);
+                    currentLine = [];
+                    currentCell = '';
+                } else if (char === '\r' && !inQuotes) {
+                    // Ignore CR outside quotes
+                } else {
+                    currentCell += char;
+                }
+            }
+            
+            if (currentCell !== '' || currentLine.length > 0) {
+                currentLine.push(currentCell.trim());
+                lines.push(currentLine);
+            }
+            
+            const newItems = [];
+            if (lines.length > 1) {
+                const headers = lines[0].map(h => h.toLowerCase().replace(/['"]/g, ''));
+                
+                const idxMrn = headers.findIndex(h => h.includes("mrn"));
+                const idxReqDate = headers.findIndex(h => h.includes("request date") || h.includes("req date"));
+                const idxVehicle = headers.findIndex(h => h.includes("vehicle") || h.includes("machinery"));
+                const idxName = headers.findIndex(h => h.includes("item name"));
+                const idxDesc = headers.findIndex(h => h.includes("description"));
+                const idxReqQty = headers.findIndex(h => h.includes("requested qty") || h.includes("req qty"));
+                const idxRecQty = headers.findIndex(h => h.includes("received qty") || h.includes("rec qty"));
+                const idxRecDate = headers.findIndex(h => h.includes("receive date") || h.includes("rec date"));
+                const idxSource = headers.findIndex(h => h.includes("source") || h.includes("purchase"));
+                // New pricing column indices
+                const idxGRN = headers.findIndex(h => h.includes("grn"));
+                const idxInvNum = headers.findIndex(h => h.includes("invoice number") || h.includes("inv num") || h.includes("invoice no"));
+                const idxInvDate = headers.findIndex(h => h.includes("invoice date") || h.includes("inv date"));
+                const idxSupplier = headers.findIndex(h => h.includes("supplier"));
+                const idxUnitPrice = headers.findIndex(h => h.includes("unit price"));
+                
+                if (idxName === -1 || idxReqQty === -1) {
+                    throw new Error("Missing required columns");
+                }
+                
+                for (let i = 1; i < lines.length; i++) {
+                    const row = lines[i];
+                    if (row.length < 2 && row.join('').trim() === '') continue; // skip empty lines
+                    
+                    const reqQtyStr = row[idxReqQty] ? row[idxReqQty].replace(/['"]/g, '') : '';
+                    const reqQtyVal = parseFloat(reqQtyStr);
+                    if (isNaN(reqQtyVal)) continue; // skip invalid rows
+                    
+                    const recQtyVal = idxRecQty !== -1 && row[idxRecQty] ? parseFloat(row[idxRecQty].replace(/['"]/g, '')) || 0 : 0;
+                    const recDateVal = idxRecDate !== -1 && row[idxRecDate] ? (row[idxRecDate].replace(/['"]/g, '') || null) : null;
+                    const sourceVal = idxSource !== -1 && row[idxSource] ? row[idxSource].replace(/['"]/g, '') : '';
+
+                    // Parse pricing fields
+                    const grnVal = idxGRN !== -1 && row[idxGRN] ? row[idxGRN].replace(/['"]/g, '').trim() : '';
+                    const invNumVal = idxInvNum !== -1 && row[idxInvNum] ? row[idxInvNum].replace(/['"]/g, '').trim() : '';
+                    const invDateVal = idxInvDate !== -1 && row[idxInvDate] ? row[idxInvDate].replace(/['"]/g, '').trim() : '';
+                    const supplierVal = idxSupplier !== -1 && row[idxSupplier] ? row[idxSupplier].replace(/['"]/g, '').trim() : '';
+                    const unitPriceStr = idxUnitPrice !== -1 && row[idxUnitPrice] ? row[idxUnitPrice].replace(/['"]/g, '').trim() : '';
+                    const unitPriceVal = unitPriceStr ? parseFloat(unitPriceStr) : null;
+
+                    const newItem = {
+                        mrnNum: idxMrn !== -1 && row[idxMrn] ? row[idxMrn].replace(/['"]/g, '') : '',
+                        reqDate: idxReqDate !== -1 && row[idxReqDate] ? row[idxReqDate].replace(/['"]/g, '') : '',
+                        vehicleMachinery: idxVehicle !== -1 && row[idxVehicle] ? row[idxVehicle].replace(/['"]/g, '') : '',
+                        itemName: row[idxName] ? row[idxName].replace(/['"]/g, '') : '',
+                        itemDesc: idxDesc !== -1 && row[idxDesc] ? row[idxDesc].replace(/['"]/g, '') : '',
+                        reqQty: reqQtyVal,
+                        recQty: recQtyVal,
+                        recDate: recDateVal,
+                        purchaseSource: sourceVal,
+                        receipts: []
+                    };
+                    
+                    // Auto-migrate imported recQty to receipts array
+                    if (newItem.recQty > 0) {
+                        const receipt = {
+                            qty: newItem.recQty,
+                            transactionType: 'Receive',
+                            deliveryDate: newItem.recDate,
+                            purchaseSource: newItem.purchaseSource || ''
+                        };
+                        // Add pricing fields if present
+                        if (grnVal) receipt.grnNumber = grnVal;
+                        if (invNumVal) receipt.invoiceNumber = invNumVal;
+                        if (invDateVal) receipt.invoiceDate = invDateVal;
+                        if (supplierVal) receipt.supplierName = supplierVal;
+                        if (unitPriceVal !== null && !isNaN(unitPriceVal)) receipt.unitPrice = unitPriceVal;
+
+                        newItem.receipts.push(receipt);
+                    }
+
+                    newItems.push(newItem);
+                }
+            }
+            return newItems;
+        }
+
+        // Initialize
+        loadItems();

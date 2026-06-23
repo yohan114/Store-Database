@@ -1,0 +1,23 @@
+{
+  "name": "delivery-monitor",
+  "version": "1.0.0",
+  "description": "Inventory / Delivery Monitor Dashboard (fast embedded SQLite engine)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "migrate": "node migrate_to_sqlite.js",
+    "migrate:force": "node migrate_to_sqlite.js --force",
+    "test:api": "node test_api.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.10.0",
+    "express": "^4.21.0",
+    "jsdom": "^29.1.1",
+    "pdf-parse": "^2.4.5",
+    "xlsx": "^0.18.5"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

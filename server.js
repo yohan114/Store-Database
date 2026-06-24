@@ -19,6 +19,7 @@ const dbApi = require('./db');
 const { toISO, nowISO } = dbApi;
 const { classify, CATEGORIES } = require('./categorize');
 const auth = require('./auth');
+const jobcards = require('./jobcards');
 
 dbApi.init();
 auth.ensureSeedUser();
@@ -88,6 +89,33 @@ app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res, next) => {
 });
 
 app.use(express.static(__dirname));
+
+// ---- Job Cards -------------------------------------------------------------
+app.get('/api/jobcards', (req, res) => {
+    res.json(jobcards.list(req.query));
+});
+app.post('/api/jobcards', (req, res) => {
+    const jc = jobcards.create(req.body || {}, req.user);
+    res.json({ success: true, jobcard: jc });
+});
+app.get('/api/jobcards/:id', (req, res) => {
+    const jc = jobcards.get(req.params.id);
+    if (!jc) return res.status(404).json({ error: 'Job card not found.' });
+    res.json(jc);
+});
+app.put('/api/jobcards/:id', (req, res) => {
+    const jc = jobcards.update(req.params.id, req.body || {}, req.user);
+    if (!jc) return res.status(404).json({ error: 'Job card not found.' });
+    res.json({ success: true, jobcard: jc });
+});
+app.post('/api/jobcards/:id/status', (req, res) => {
+    const r = jobcards.setStatus(req.params.id, (req.body || {}).status, (req.body || {}).note, req.user);
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json({ success: true, jobcard: r.jobcard });
+});
+app.delete('/api/jobcards/:id', auth.requireRole('ADMIN'), (req, res) => {
+    res.json(jobcards.remove(req.params.id));
+});
 
 // --- helpers ----------------------------------------------------------------
 const s = (v) => (v === null || v === undefined) ? '' : String(v);

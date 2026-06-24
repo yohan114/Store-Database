@@ -240,6 +240,13 @@
                         <span class="sidebar-text">Dashboard</span>
                     </span>
                 </a>
+                <a href="#jobcards" id="nav-jobcards" class="sidebar-btn w-full flex items-center justify-between px-3.5 py-3 text-slate-655 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-semibold rounded-2xl transition-all duration-200 border border-transparent outline-none">
+                    <span class="flex items-center">
+                        <svg class="sidebar-icon w-5 h-5 mr-3 text-slate-400 dark:text-slate-500 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                        <span class="sidebar-text">Job Cards</span>
+                    </span>
+                    <span id="count-jobcards" class="sidebar-badge bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-0.5 px-3 rounded-full text-xs font-extrabold transition-all">0</span>
+                </a>
                 <a href="#tracker" id="nav-tracker" class="sidebar-btn w-full flex items-center justify-between px-3.5 py-3 text-slate-655 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-semibold rounded-2xl transition-all duration-200 border border-transparent outline-none">
                     <span class="flex items-center">
                         <svg class="sidebar-icon w-5 h-5 mr-3 text-slate-400 dark:text-slate-500 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
@@ -316,6 +323,150 @@
         <main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-slate-50/50 dark:bg-slate-950/20 space-y-6">
         
             <!-- VIEW: Command Dashboard -->
+            <!-- ============================ JOB CARDS (list) ============================ -->
+            <section id="view-jobcards" class="route-view hidden space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Job Cards</h2>
+                        <p class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-1">Vehicle &amp; machinery repair / service jobs and their daily programme.</p>
+                    </div>
+                    <a href="#jobcard-entry" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-400 hover:to-indigo-600 text-white text-sm font-bold shadow-sm transition self-start sm:self-auto">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path></svg>
+                        New Job Card
+                    </a>
+                </div>
+
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm p-4 sm:p-5">
+                    <div class="flex flex-col md:flex-row gap-3 md:items-center">
+                        <div class="relative flex-grow">
+                            <svg class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            <input id="jcSearch" oninput="renderJobCards()" placeholder="Search job no, vehicle, project, driver…" class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <select id="jcStatusFilter" onchange="renderJobCards()" class="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <option value="">All statuses</option>
+                            <option value="OPEN">Open</option>
+                            <option value="IN_PROGRESS">In Progress</option>
+                            <option value="ON_HOLD">On Hold</option>
+                            <option value="COMPLETED">Completed</option>
+                            <option value="CLOSED">Closed</option>
+                        </select>
+                        <select id="jcTypeFilter" onchange="renderJobCards()" class="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <option value="">All types</option>
+                            <option value="INTERNAL">Internal</option>
+                            <option value="OUTSOURCED">Outsourced</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-150 dark:border-slate-800">
+                                <tr class="text-left text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                    <th class="px-5 py-4">Job No</th>
+                                    <th class="px-5 py-4">Vehicle / Machinery</th>
+                                    <th class="px-5 py-4">Type</th>
+                                    <th class="px-5 py-4">Date</th>
+                                    <th class="px-5 py-4">Status</th>
+                                    <th class="px-5 py-4 text-right">Labour (Rs.)</th>
+                                    <th class="px-5 py-4 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jobCardsTableBody" class="divide-y divide-slate-100 dark:divide-slate-800/70"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================ JOB CARD (create / edit) ============================ -->
+            <section id="view-jobcard-entry" class="route-view hidden space-y-6 max-w-4xl mx-auto">
+                <div class="flex items-center gap-3">
+                    <a href="#jobcards" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white transition" title="Back to Job Cards">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    </a>
+                    <div>
+                        <h2 id="jcEntryTitle" class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">New Job Card</h2>
+                        <p id="jcEntrySubtitle" class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-0.5">Create a vehicle / machinery repair or service job.</p>
+                    </div>
+                </div>
+
+                <form id="jobCardForm" onsubmit="saveJobCard(event)" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm p-6 sm:p-8 space-y-5">
+                    <input type="hidden" id="jcId">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Job Type</label>
+                            <select id="jcType" onchange="toggleVendorField()" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                                <option value="INTERNAL">Internal Workshop Job</option>
+                                <option value="OUTSOURCED">Outsourced Service Request</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Vehicle / Machinery</label>
+                            <input id="jcVehicle" list="vehicleDatalist" required placeholder="e.g. LM-6658" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Date</label>
+                            <input id="jcDate" type="date" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Project / Plant</label>
+                            <input id="jcProject" placeholder="e.g. Badalgama" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Meter (km / hrs)</label>
+                            <input id="jcMeter" type="number" step="any" placeholder="e.g. 84211" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Repair Type</label>
+                            <select id="jcRepairType" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                                <option value="">—</option>
+                                <option value="Accident">Accident</option>
+                                <option value="Running">Running Repair</option>
+                                <option value="Service">Service</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Expected Completion</label>
+                            <input id="jcExpectedDate" type="date" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Driver / Operator</label>
+                            <input id="jcDriver" placeholder="Name" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Contact No</label>
+                            <input id="jcContact" placeholder="Phone" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">ECD No</label>
+                            <input id="jcEcd" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div id="jcVendorWrap" class="hidden sm:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Vendor / External Company</label>
+                            <input id="jcVendor" placeholder="Company name" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Required Service / Repair Details</label>
+                        <textarea id="jcDetails" rows="4" placeholder="Describe the work required…" class="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500"></textarea>
+                    </div>
+                    <div id="jcEntryError" class="hidden text-sm font-semibold text-rose-500 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2"></div>
+                    <div class="flex items-center justify-end gap-3 pt-2">
+                        <a href="#jobcards" class="px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Cancel</a>
+                        <button id="jcSaveBtn" type="submit" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-400 hover:to-indigo-600 text-white text-sm font-bold shadow-sm transition">Save Job Card</button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- ============================ JOB CARD detail modal ============================ -->
+            <div id="jobCardModal" class="hidden fixed inset-0 z-[60] flex items-start justify-center p-4 sm:p-8 overflow-y-auto">
+                <div class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onclick="closeJobCardModal()"></div>
+                <div class="relative w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl my-4">
+                    <div id="jobCardModalContent" class="p-6 sm:p-8"></div>
+                </div>
+            </div>
+
             <section id="view-dashboard" class="route-view hidden space-y-6">
                 <!-- Premium Analytics / KPI Cards Section -->
                 <div class="space-y-4">
@@ -4944,7 +5095,7 @@
         // Central Router Engine
         function handleRouting() {
             const hash = window.location.hash || '#dashboard';
-            const views = ['dashboard', 'tracker', 'receiving', 'pricing', 'fleet', 'issued', 'issue-desk', 'inventory', 'batteries', 'battery-entry', 'battery-move', 'transfers', 'transfer-entry'];
+            const views = ['dashboard', 'jobcards', 'jobcard-entry', 'tracker', 'receiving', 'pricing', 'fleet', 'issued', 'issue-desk', 'inventory', 'batteries', 'battery-entry', 'battery-move', 'transfers', 'transfer-entry'];
             
             let matchedView = 'dashboard';
             let routeParam = null;
@@ -4973,6 +5124,7 @@
             closeAddModal();
             closeBatteryOffcanvas();
             closeTransferOffcanvas();
+            closeJobCardModal();
 
             // Toggle route views visibility in main frame
             document.querySelectorAll('.route-view').forEach(el => {
@@ -5008,6 +5160,12 @@
             switch(currentView) {
                 case 'dashboard':
                     renderDashboard();
+                    break;
+                case 'jobcards':
+                    renderJobCards();
+                    break;
+                case 'jobcard-entry':
+                    setupJobCardEntry(param);
                     break;
                 case 'tracker':
                     renderTable();
@@ -6996,6 +7154,255 @@
 
         function loadItems() {
             loadAllData();
+        }
+    </script>
+
+    <!-- Job Cards module (unified Workshop + Stores system) -->
+    <script>
+        const jcEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const jcCur = (n) => (typeof formatCurrency === 'function') ? formatCurrency(n) : ('Rs. ' + Number(n || 0).toLocaleString());
+        const jcDate = (iso) => {
+            if (!iso) return '—';
+            const d = new Date(iso); if (isNaN(d)) return jcEsc(iso);
+            return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        };
+        const JC_STATUS_META = {
+            OPEN:        { label: 'Open',        cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
+            IN_PROGRESS: { label: 'In Progress', cls: 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' },
+            ON_HOLD:     { label: 'On Hold',     cls: 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400' },
+            COMPLETED:   { label: 'Completed',   cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' },
+            CLOSED:      { label: 'Closed',      cls: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400' },
+        };
+        const JC_STATUS_ACTION = {
+            IN_PROGRESS: { label: 'Start / Resume', tone: 'from-blue-500 to-blue-700' },
+            ON_HOLD:     { label: 'Put On Hold',    tone: 'from-amber-500 to-amber-600', note: true },
+            COMPLETED:   { label: 'Complete',       tone: 'from-emerald-500 to-emerald-700' },
+            CLOSED:      { label: 'Close',          tone: 'from-indigo-500 to-indigo-700' },
+        };
+
+        function jcBadge(status) {
+            const m = JC_STATUS_META[status] || JC_STATUS_META.OPEN;
+            return `<span class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider ${m.cls}">${m.label}</span>`;
+        }
+
+        async function renderJobCards() {
+            const body = document.getElementById('jobCardsTableBody');
+            if (!body) return;
+            const q = new URLSearchParams();
+            const search = (document.getElementById('jcSearch') || {}).value;
+            const status = (document.getElementById('jcStatusFilter') || {}).value;
+            const type = (document.getElementById('jcTypeFilter') || {}).value;
+            if (search) q.set('search', search);
+            if (status) q.set('status', status);
+            if (type) q.set('type', type);
+            q.set('limit', '200');
+            body.innerHTML = `<tr><td colspan="7" class="px-5 py-10 text-center text-sm font-semibold text-slate-400">Loading…</td></tr>`;
+            let data;
+            try {
+                const res = await fetch('/api/jobcards?' + q.toString());
+                data = await res.json();
+            } catch (e) {
+                body.innerHTML = `<tr><td colspan="7" class="px-5 py-10 text-center text-sm font-semibold text-rose-500">Failed to load job cards.</td></tr>`;
+                return;
+            }
+            const rows = (data && data.jobcards) || [];
+            const badge = document.getElementById('count-jobcards');
+            if (badge) badge.textContent = rows.filter((r) => r.status !== 'CLOSED').length;
+            if (!rows.length) {
+                body.innerHTML = `<tr><td colspan="7" class="px-5 py-12 text-center"><div class="text-sm font-semibold text-slate-400 dark:text-slate-500">No job cards yet.</div><a href="#jobcard-entry" class="inline-block mt-3 text-sm font-bold text-indigo-600 dark:text-indigo-400">+ Create the first job card</a></td></tr>`;
+                return;
+            }
+            body.innerHTML = rows.map((r) => `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition cursor-pointer" onclick="openJobCardDetail(${r.id})">
+                    <td class="px-5 py-3.5 font-extrabold text-slate-800 dark:text-slate-100">${jcEsc(r.jobNo || '—')}</td>
+                    <td class="px-5 py-3.5 font-semibold text-slate-700 dark:text-slate-300">${jcEsc(r.vehicleMachinery || '—')}</td>
+                    <td class="px-5 py-3.5"><span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">${r.type === 'OUTSOURCED' ? 'Outsourced' : 'Internal'}</span></td>
+                    <td class="px-5 py-3.5 text-slate-500 dark:text-slate-400 font-semibold">${jcDate(r.dateISO)}</td>
+                    <td class="px-5 py-3.5">${jcBadge(r.status)}</td>
+                    <td class="px-5 py-3.5 text-right font-bold text-slate-700 dark:text-slate-300">${(r.labourCost || 0) > 0 ? jcCur(r.labourCost) : '—'}</td>
+                    <td class="px-5 py-3.5 text-right" onclick="event.stopPropagation()">
+                        <button onclick="editJobCard(${r.id})" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Edit</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        async function openJobCardDetail(id) {
+            const modal = document.getElementById('jobCardModal');
+            const mount = document.getElementById('jobCardModalContent');
+            if (!modal || !mount) return;
+            mount.innerHTML = `<div class="py-10 text-center text-sm font-semibold text-slate-400">Loading…</div>`;
+            modal.classList.remove('hidden');
+            let jc;
+            try { jc = await (await fetch('/api/jobcards/' + id)).json(); } catch (e) { jc = null; }
+            if (!jc || jc.error) { mount.innerHTML = `<div class="py-10 text-center text-sm font-semibold text-rose-500">Could not load this job card.</div>`; return; }
+            renderJobCardModal(jc);
+        }
+        function closeJobCardModal() {
+            const modal = document.getElementById('jobCardModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function jcField(label, value) {
+            return `<div><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">${label}</div><div class="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">${value || '—'}</div></div>`;
+        }
+
+        function renderJobCardModal(jc) {
+            const mount = document.getElementById('jobCardModalContent');
+            const actions = (jc.availableStatuses || []).map((st) => {
+                const a = JC_STATUS_ACTION[st]; if (!a) return '';
+                return `<button onclick="changeJobStatus(${jc.id}, '${st}', ${a.note ? 'true' : 'false'})" class="px-4 py-2 rounded-xl bg-gradient-to-r ${a.tone} text-white text-xs font-bold shadow-sm transition">${a.label}</button>`;
+            }).join('');
+            const timeline = (jc.audits || []).map((au) => `
+                <div class="flex gap-3 text-xs">
+                    <div class="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0"></div>
+                    <div>
+                        <span class="font-bold text-slate-700 dark:text-slate-300">${jcEsc(au.action)}</span>
+                        ${au.fromStatus ? `<span class="text-slate-400">· ${jcEsc(au.fromStatus)} → ${jcEsc(au.toStatus || '')}</span>` : (au.toStatus ? `<span class="text-slate-400">· ${jcEsc(au.toStatus)}</span>` : '')}
+                        ${au.note ? `<div class="text-slate-500 dark:text-slate-400 mt-0.5 italic">“${jcEsc(au.note)}”</div>` : ''}
+                        <div class="text-[10px] text-slate-400 mt-0.5">${jcEsc(au.userName || '')} · ${jcDate(au.at)}</div>
+                    </div>
+                </div>`).join('');
+            mount.innerHTML = `
+                <div class="flex items-start justify-between gap-4 mb-5">
+                    <div>
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-xl font-black text-slate-900 dark:text-white tracking-tight">${jcEsc(jc.jobNo || 'Job Card')}</h3>
+                            ${jcBadge(jc.status)}
+                        </div>
+                        <div class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-1">${jc.type === 'OUTSOURCED' ? 'Outsourced Service Request' : 'Internal Workshop Job'} · ${jcEsc(jc.vehicleMachinery || '')}</div>
+                    </div>
+                    <button onclick="closeJobCardModal()" class="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl p-4 mb-5">
+                    ${jcField('Date', jcDate(jc.dateISO))}
+                    ${jcField('Project / Plant', jcEsc(jc.projectName))}
+                    ${jcField('Meter', jc.meter != null ? jcEsc(jc.meter) : '—')}
+                    ${jcField('Repair Type', jcEsc(jc.repairType))}
+                    ${jcField('Expected', jcDate(jc.expectedDateISO))}
+                    ${jcField('Driver / Operator', jcEsc(jc.driverName))}
+                    ${jcField('Contact', jcEsc(jc.contactNo))}
+                    ${jcField('ECD No', jcEsc(jc.ecdNo))}
+                    ${jc.type === 'OUTSOURCED' ? jcField('Vendor', jcEsc(jc.vendorName)) : ''}
+                </div>
+
+                ${jc.details ? `<div class="mb-5"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Required Work</div><div class="text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3">${jcEsc(jc.details)}</div></div>` : ''}
+
+                <div class="grid grid-cols-3 gap-3 mb-5">
+                    <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Parts</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.partsCost || 0)}</div></div>
+                    <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Labour</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.labourCost || 0)}</div></div>
+                    <div class="rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Total Job Cost</div><div class="text-base font-black text-indigo-700 dark:text-indigo-400 mt-0.5">${jcCur(jc.totalCost || 0)}</div></div>
+                </div>
+
+                <!-- Daily Programme mount (Phase 3) -->
+                <div id="jcProgrammeMount"></div>
+                <!-- Linked MRNs mount (Phase 4) -->
+                <div id="jcMrnMount"></div>
+
+                <div class="flex flex-wrap items-center gap-2 mt-5 pt-5 border-t border-slate-100 dark:border-slate-800">
+                    ${actions}
+                    <div class="flex-grow"></div>
+                    <button onclick="editJobCard(${jc.id})" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Edit Job Card</button>
+                </div>
+
+                ${timeline ? `<div class="mt-6"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-3">Activity</div><div class="space-y-3">${timeline}</div></div>` : ''}
+            `;
+            if (typeof renderJobProgramme === 'function') renderJobProgramme(jc);   // Phase 3 hook
+        }
+
+        async function changeJobStatus(id, status, needNote) {
+            let note = '';
+            if (needNote) {
+                note = prompt('Reason for putting this job on hold:') || '';
+                if (note === null) return;
+            }
+            try {
+                const res = await fetch('/api/jobcards/' + id + '/status', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status, note })
+                });
+                const data = await res.json();
+                if (!res.ok) { alert(data.error || 'Could not change status.'); return; }
+                renderJobCardModal(data.jobcard);
+                renderJobCards();
+            } catch (e) { alert('Network error.'); }
+        }
+
+        function editJobCard(id) { closeJobCardModal(); window.location.hash = '#jobcard-entry/' + id; }
+        function toggleVendorField() {
+            const wrap = document.getElementById('jcVendorWrap');
+            const type = (document.getElementById('jcType') || {}).value;
+            if (wrap) wrap.classList.toggle('hidden', type !== 'OUTSOURCED');
+        }
+
+        async function setupJobCardEntry(param) {
+            const form = document.getElementById('jobCardForm');
+            if (form) form.reset();
+            const err = document.getElementById('jcEntryError'); if (err) err.classList.add('hidden');
+            document.getElementById('jcId').value = '';
+            const title = document.getElementById('jcEntryTitle');
+            const sub = document.getElementById('jcEntrySubtitle');
+            if (param) {
+                if (title) title.textContent = 'Edit Job Card';
+                if (sub) sub.textContent = 'Update the job card details.';
+                try {
+                    const jc = await (await fetch('/api/jobcards/' + param)).json();
+                    if (jc && !jc.error) {
+                        document.getElementById('jcId').value = jc.id;
+                        document.getElementById('jcType').value = jc.type || 'INTERNAL';
+                        document.getElementById('jcVehicle').value = jc.vehicleMachinery || '';
+                        document.getElementById('jcDate').value = jc.dateISO || '';
+                        document.getElementById('jcProject').value = jc.projectName || '';
+                        document.getElementById('jcMeter').value = jc.meter != null ? jc.meter : '';
+                        document.getElementById('jcRepairType').value = jc.repairType || '';
+                        document.getElementById('jcExpectedDate').value = jc.expectedDateISO || '';
+                        document.getElementById('jcDriver').value = jc.driverName || '';
+                        document.getElementById('jcContact').value = jc.contactNo || '';
+                        document.getElementById('jcEcd').value = jc.ecdNo || '';
+                        document.getElementById('jcVendor').value = jc.vendorName || '';
+                        document.getElementById('jcDetails').value = jc.details || '';
+                    }
+                } catch (e) { /* ignore */ }
+            } else {
+                if (title) title.textContent = 'New Job Card';
+                if (sub) sub.textContent = 'Create a vehicle / machinery repair or service job.';
+                const d = document.getElementById('jcDate'); if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+            }
+            toggleVendorField();
+        }
+
+        async function saveJobCard(event) {
+            event.preventDefault();
+            const err = document.getElementById('jcEntryError'); if (err) err.classList.add('hidden');
+            const id = document.getElementById('jcId').value;
+            const payload = {
+                type: document.getElementById('jcType').value,
+                vehicleMachinery: document.getElementById('jcVehicle').value,
+                date: document.getElementById('jcDate').value,
+                projectName: document.getElementById('jcProject').value,
+                meter: document.getElementById('jcMeter').value,
+                repairType: document.getElementById('jcRepairType').value,
+                expectedDate: document.getElementById('jcExpectedDate').value,
+                driverName: document.getElementById('jcDriver').value,
+                contactNo: document.getElementById('jcContact').value,
+                ecdNo: document.getElementById('jcEcd').value,
+                vendorName: document.getElementById('jcVendor').value,
+                details: document.getElementById('jcDetails').value,
+            };
+            if (!payload.vehicleMachinery.trim()) { if (err) { err.textContent = 'Vehicle / Machinery is required.'; err.classList.remove('hidden'); } return; }
+            const btn = document.getElementById('jcSaveBtn'); if (btn) btn.disabled = true;
+            try {
+                const res = await fetch('/api/jobcards' + (id ? '/' + id : ''), {
+                    method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok) { if (err) { err.textContent = data.error || 'Could not save.'; err.classList.remove('hidden'); } if (btn) btn.disabled = false; return; }
+                window.location.hash = '#jobcards';
+            } catch (e) {
+                if (err) { err.textContent = 'Network error — please try again.'; err.classList.remove('hidden'); }
+                if (btn) btn.disabled = false;
+            }
         }
     </script>
 

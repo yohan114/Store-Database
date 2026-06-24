@@ -268,6 +268,40 @@ function init() {
         CREATE INDEX IF NOT EXISTS idx_sessions_userId ON sessions(userId);
     `);
 
+    // ---- Job Cards (parent) + audit trail ----------------------------------
+    exec(`
+        CREATE TABLE IF NOT EXISTS jobcards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jobNo TEXT,
+            type TEXT,                        -- INTERNAL | OUTSOURCED
+            status TEXT,                      -- OPEN | IN_PROGRESS | ON_HOLD | COMPLETED | CLOSED
+            date TEXT, dateISO TEXT,
+            projectName TEXT,
+            vehicleMachinery TEXT,
+            meter REAL,
+            repairType TEXT, repairTypeNote TEXT,
+            expectedDate TEXT, expectedDateISO TEXT,
+            driverName TEXT, contactNo TEXT, ecdNo TEXT,
+            details TEXT,
+            vendorName TEXT,
+            startedAt TEXT, completedAt TEXT, closedAt TEXT, holdReason TEXT,
+            labourCost REAL DEFAULT 0,        -- cached rollup of daily_programme rows
+            createdBy INTEGER, createdAt TEXT, updatedAt TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS job_audits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jobCardId INTEGER,
+            userId INTEGER, userName TEXT,
+            action TEXT, fromStatus TEXT, toStatus TEXT, note TEXT, at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_jobcards_status  ON jobcards(status);
+        CREATE INDEX IF NOT EXISTS idx_jobcards_vehicle ON jobcards(vehicleMachinery);
+        CREATE INDEX IF NOT EXISTS idx_jobcards_dateISO ON jobcards(dateISO);
+        CREATE INDEX IF NOT EXISTS idx_jobaudits_card   ON job_audits(jobCardId);
+    `);
+
     // Lightweight migration: add the category column if upgrading an older DB.
     try {
         const cols = all(`PRAGMA table_info(items)`);

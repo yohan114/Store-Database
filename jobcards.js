@@ -1,0 +1,182 @@
+'use strict';
+
+/**
+ * jobcards.js — Job Card service for the unified Workshop + Stores system.
+ *
+ * Streamlined first cut (per approved plan): create / edit / list / get plus a
+ * simple status lifecycle with an audit trail. The richer 7-role approval
+ * workflow from Job-Card-System/src/domain.js is intentionally deferred; its
+ * TRANSITIONS table can be layered on later without changing this schema.
+ *
+ * A Job Card is the PARENT of its Daily Programme entries (added in Phase 3)
+ * and of any MRNs/issues linked to it (Phase 4).
+ */
+
+const db = require('./db');
+
+const STATUSES = ['OPEN', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CLOSED'];
+
+// Streamlined status lifecycle (no role gating yet).
+const TRANSITIONS = {
+    OPEN: ['IN_PROGRESS', 'CLOSED'],
+    IN_PROGRESS: ['ON_HOLD', 'COMPLETED'],
+    ON_HOLD: ['IN_PROGRESS'],
+    COMPLETED: ['CLOSED', 'IN_PROGRESS'],
+    CLOSED: [],
+};
+
+const s = (v) => (v === null || v === undefined) ? '' : String(v).trim();
+const numOrNull = (v) => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
+
+function genJobNo() {
+    const year = new Date().getFullYear();
+    const prefix = `JC-${year}-`;
+    // jobNo format JC-YYYY-#### → the number starts at character 9 (1-indexed).
+    const row = db.get(
+        `SELECT MAX(CAST(substr(jobNo, 9) AS INTEGER)) AS mx FROM jobcards WHERE jobNo LIKE ?`,
+        [prefix + '%']
+    );
+    const next = ((row && row.mx) || 0) + 1;
+    return prefix + String(next).padStart(4, '0');
+}
+
+function audit(jobCardId, user, action, fromStatus, toStatus, note) {
+    db.run(
+        `INSERT INTO job_audits (jobCardId, userId, userName, action, fromStatus, toStatus, note, at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [jobCardId, user ? user.id : null, user ? (user.name || user.username) : 'system',
+         action, fromStatus || null, toStatus || null, s(note), new Date().toISOString()]
+    );
+}
+
+function rowFields(form) {
+    return {
+        type: form.type === 'OUTSOURCED' ? 'OUTSOURCED' : 'INTERNAL',
+        date: s(form.date) || new Date().toISOString().slice(0, 10),
+        dateISO: db.toISO(form.date) || new Date().toISOString().slice(0, 10),
+        projectName: s(form.projectName),
+        vehicleMachinery: s(form.vehicleMachinery),
+        meter: numOrNull(form.meter),
+        repairType: s(form.repairType),
+        repairTypeNote: s(form.repairTypeNote),
+        expectedDate: s(form.expectedDate),
+        expectedDateISO: db.toISO(form.expectedDate),
+        driverName: s(form.driverName),
+        contactNo: s(form.contactNo),
+        ecdNo: s(form.ecdNo),
+        details: s(form.details),
+        vendorName: s(form.vendorName),
+    };
+}
+
+function create(form, user) {
+    const now = new Date().toISOString();
+    const f = rowFields(form);
+    const jobNo = genJobNo();
+    const r = db.run(
+        `INSERT INTO jobcards
+         (jobNo, type, status, date, dateISO, projectName, vehicleMachinery, meter,
+          repairType, repairTypeNote, expectedDate, expectedDateISO, driverName, contactNo, ecdNo,
+          details, vendorName, labourCost, createdBy, createdAt, updatedAt)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [jobNo, f.type, 'OPEN', f.date, f.dateISO, f.projectName, f.vehicleMachinery, f.meter,
+         f.repairType, f.repairTypeNote, f.expectedDate, f.expectedDateISO, f.driverName, f.contactNo, f.ecdNo,
+         f.details, f.vendorName, 0, user ? user.id : null, now, now]
+    );
+    audit(r.lastInsertRowid, user, 'create', null, 'OPEN', '');
+    return get(r.lastInsertRowid);
+}
+
+function update(id, form, user) {
+    const existing = db.get('SELECT * FROM jobcards WHERE id=?', [id]);
+    if (!existing) return null;
+    const f = rowFields(form);
+    db.run(
+        `UPDATE jobcards SET type=?, date=?, dateISO=?, projectName=?, vehicleMachinery=?, meter=?,
+            repairType=?, repairTypeNote=?, expectedDate=?, expectedDateISO=?, driverName=?, contactNo=?,
+            ecdNo=?, details=?, vendorName=?, updatedAt=? WHERE id=?`,
+        [f.type, f.date, f.dateISO, f.projectName, f.vehicleMachinery, f.meter,
+         f.repairType, f.repairTypeNote, f.expectedDate, f.expectedDateISO, f.driverName, f.contactNo,
+         f.ecdNo, f.details, f.vendorName, new Date().toISOString(), id]
+    );
+    audit(id, user, 'edit', existing.status, existing.status, '');
+    return get(id);
+}
+
+function setStatus(id, toStatus, note, user) {
+    const jc = db.get('SELECT * FROM jobcards WHERE id=?', [id]);
+    if (!jc) return { error: 'Job card not found.' };
+    if (!STATUSES.includes(toStatus)) return { error: 'Unknown status.' };
+    const allowed = TRANSITIONS[jc.status] || [];
+    if (!allowed.includes(toStatus)) {
+        return { error: `Cannot move a ${jc.status} job card to ${toStatus}.` };
+    }
+    const now = new Date().toISOString();
+    const sets = ['status=?', 'updatedAt=?'];
+    const params = [toStatus, now];
+    if (toStatus === 'IN_PROGRESS' && !jc.startedAt) { sets.push('startedAt=?'); params.push(now); }
+    if (toStatus === 'COMPLETED') { sets.push('completedAt=?'); params.push(now); }
+    if (toStatus === 'CLOSED') { sets.push('closedAt=?'); params.push(now); }
+    if (toStatus === 'ON_HOLD') { sets.push('holdReason=?'); params.push(s(note)); }
+    params.push(id);
+    db.run(`UPDATE jobcards SET ${sets.join(', ')} WHERE id=?`, params);
+    audit(id, user, 'status', jc.status, toStatus, note);
+    return { jobcard: get(id) };
+}
+
+function get(id) {
+    const jc = db.get('SELECT * FROM jobcards WHERE id=?', [id]);
+    if (!jc) return null;
+    jc.audits = db.all('SELECT * FROM job_audits WHERE jobCardId=? ORDER BY id DESC', [id]);
+    jc.availableStatuses = TRANSITIONS[jc.status] || [];
+    // Daily programme + parts cost are attached in later phases.
+    jc.programme = [];
+    jc.partsCost = 0;
+    jc.totalCost = (jc.labourCost || 0) + 0;
+    return jc;
+}
+
+const JOB_SORTS = {
+    jobNo: 'jobNo COLLATE NOCASE',
+    date: 'dateISO',
+    vehicleMachinery: 'vehicleMachinery COLLATE NOCASE',
+    status: 'status',
+    labourCost: 'labourCost',
+};
+
+function list(q = {}) {
+    const where = [];
+    const params = [];
+    if (q.search) {
+        const like = `%${q.search}%`;
+        where.push('(jobNo LIKE ? OR vehicleMachinery LIKE ? OR projectName LIKE ? OR details LIKE ? OR driverName LIKE ?)');
+        params.push(like, like, like, like, like);
+    }
+    if (q.status) { where.push('status=?'); params.push(q.status); }
+    if (q.type) { where.push('type=?'); params.push(q.type); }
+    if (q.vehicle) { where.push('vehicleMachinery=?'); params.push(q.vehicle); }
+    if (q.startDate) { where.push('dateISO>=?'); params.push(q.startDate); }
+    if (q.endDate) { where.push('dateISO<=?'); params.push(q.endDate); }
+    const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+    const orderBy = JOB_SORTS[q.sort] || 'dateISO';
+    const dir = String(q.order).toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+    const total = db.get(`SELECT COUNT(*) AS c FROM jobcards ${whereSql}`, params).c;
+    const page = Math.max(1, parseInt(q.page, 10) || 1);
+    const limit = Math.min(500, Math.max(1, parseInt(q.limit, 10) || 100));
+    const offset = (page - 1) * limit;
+    const rows = db.all(
+        `SELECT * FROM jobcards ${whereSql} ORDER BY ${orderBy} ${dir}, id DESC LIMIT ? OFFSET ?`,
+        [...params, limit, offset]
+    );
+    rows.forEach((r) => { r.totalCost = (r.labourCost || 0) + 0; });
+    return { jobcards: rows, total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
+function remove(id) {
+    db.run('DELETE FROM job_audits WHERE jobCardId=?', [id]);
+    db.run('DELETE FROM jobcards WHERE id=?', [id]);
+    return { success: true };
+}
+
+module.exports = { STATUSES, TRANSITIONS, create, update, setStatus, get, list, remove, genJobNo };

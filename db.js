@@ -337,6 +337,17 @@ function init() {
             exec(`CREATE INDEX IF NOT EXISTS idx_items_category ON items(category);`);
         }
     } catch (e) { /* fresh DB already has it */ }
+
+    // Migration: link MRNs (items) and issues to a job card (nullable, additive).
+    ['items', 'issues'].forEach((tbl) => {
+        try {
+            const cols = all(`PRAGMA table_info(${tbl})`);
+            if (!cols.some(c => c.name === 'jobCardId')) exec(`ALTER TABLE ${tbl} ADD COLUMN jobCardId INTEGER;`);
+            if (!cols.some(c => c.name === 'jobNo')) exec(`ALTER TABLE ${tbl} ADD COLUMN jobNo TEXT;`);
+        } catch (e) { /* fresh DB already has the columns */ }
+    });
+    try { exec(`CREATE INDEX IF NOT EXISTS idx_items_jobCardId ON items(jobCardId);`); } catch (e) {}
+    try { exec(`CREATE INDEX IF NOT EXISTS idx_issues_jobCardId ON issues(jobCardId);`); } catch (e) {}
     return db;
 }
 

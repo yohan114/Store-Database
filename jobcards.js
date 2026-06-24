@@ -27,6 +27,7 @@ const TRANSITIONS = {
 
 const s = (v) => (v === null || v === undefined) ? '' : String(v).trim();
 const numOrNull = (v) => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 function genJobNo() {
     const year = new Date().getFullYear();
@@ -133,8 +134,17 @@ function get(id) {
     try {
         jc.programme = db.all('SELECT * FROM daily_programme WHERE jobCardId=? ORDER BY entryDateISO DESC, id DESC', [id]);
     } catch (_) { jc.programme = []; }
-    jc.partsCost = 0; // populated in Phase 4 (linked MRN/GRN receipts)
-    jc.totalCost = (jc.labourCost || 0) + (jc.partsCost || 0);
+    // Linked MRNs (items) + parts cost from priced "Receive" receipts on them.
+    try {
+        jc.linkedItems = db.all(
+            `SELECT i.id, i.mrnNum, i.itemName, i.itemDesc, i.vehicleMachinery, i.reqQty, i.category,
+                    COALESCE((SELECT SUM(r.qty) FROM receipts r WHERE r.itemId=i.id AND r.transactionType='Receive'),0) AS recQty,
+                    COALESCE((SELECT SUM(CASE WHEN r.transactionType='Receive' AND r.unitPrice IS NOT NULL THEN r.qty*r.unitPrice ELSE 0 END) FROM receipts r WHERE r.itemId=i.id),0) AS lineCost,
+                    (SELECT COUNT(*) FROM receipts r WHERE r.itemId=i.id AND r.transactionType='Receive' AND (r.unitPrice IS NULL OR r.unitPrice=0)) AS unpricedCount
+             FROM items i WHERE i.jobCardId=? ORDER BY i.id DESC`, [id]);
+    } catch (_) { jc.linkedItems = []; }
+    jc.partsCost = round2((jc.linkedItems || []).reduce((sum, it) => sum + (it.lineCost || 0), 0));
+    jc.totalCost = round2((jc.labourCost || 0) + jc.partsCost);
     return jc;
 }
 

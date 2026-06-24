@@ -156,6 +156,31 @@ app.put('/api/mechanics/:id', (req, res) => {
     res.json({ success: true, mechanic: r.mechanic });
 });
 
+// ---- Link MRNs (items) to job cards (parts cost) ---------------------------
+function setItemJob(itemId, jobCardId) {
+    if (!jobCardId) { dbApi.run('UPDATE items SET jobCardId=NULL, jobNo=NULL WHERE id=?', [itemId]); return null; }
+    const j = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobCardId]);
+    if (!j) return null;
+    dbApi.run('UPDATE items SET jobCardId=?, jobNo=? WHERE id=?', [jobCardId, j.jobNo, itemId]);
+    return j.jobNo;
+}
+// Link every item line of an MRN number to a job card.
+app.post('/api/jobcards/:id/link-mrn', (req, res) => {
+    const jobCardId = parseInt(req.params.id);
+    const job = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobCardId]);
+    if (!job) return res.status(404).json({ error: 'Job card not found.' });
+    const mrnNum = String((req.body || {}).mrnNum || '').trim();
+    if (!mrnNum) return res.status(400).json({ error: 'MRN number is required.' });
+    const r = dbApi.run('UPDATE items SET jobCardId=?, jobNo=? WHERE mrnNum=?', [jobCardId, job.jobNo, mrnNum]);
+    if (!r.changes) return res.status(404).json({ error: 'No MRN found with that number.' });
+    res.json({ success: true, linked: r.changes });
+});
+// Link / unlink a single item line.
+app.post('/api/items/:id/link', (req, res) => {
+    const jobNo = setItemJob(parseInt(req.params.id), (req.body || {}).jobCardId || null);
+    res.json({ success: true, jobNo });
+});
+
 // --- helpers ----------------------------------------------------------------
 const s = (v) => (v === null || v === undefined) ? '' : String(v);
 const numOrNull = (v) => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
@@ -271,6 +296,7 @@ app.post('/api/items', (req, res) => {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [s(b.mrnNum), s(b.reqDate), toISO(b.reqDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.reqQty) || 0, category, now, now]
         );
+        if (b.jobCardId) setItemJob(r.lastInsertRowid, b.jobCardId);
         res.json({ success: true, id: r.lastInsertRowid, category });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -291,6 +317,7 @@ app.put('/api/items/:id', (req, res) => {
             `UPDATE items SET mrnNum=?, reqDate=?, reqDateISO=?, vehicleMachinery=?, itemName=?, itemDesc=?, reqQty=?, category=?, updatedAt=? WHERE id=?`,
             [s(b.mrnNum), s(b.reqDate), toISO(b.reqDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.reqQty) || 0, category, nowISO(), id]
         );
+        if (b.jobCardId !== undefined) setItemJob(id, b.jobCardId || null);
         res.json({ success: true, category });
     } catch (e) {
         res.status(500).json({ error: e.message });

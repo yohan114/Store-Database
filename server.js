@@ -21,6 +21,7 @@ const { classify, CATEGORIES } = require('./categorize');
 const auth = require('./auth');
 const jobcards = require('./jobcards');
 const programme = require('./programme');
+const dashboard = require('./dashboard');
 
 dbApi.init();
 auth.ensureSeedUser();
@@ -91,6 +92,11 @@ app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res, next) => {
 });
 
 app.use(express.static(__dirname));
+
+// ---- Unified dashboard analytics -------------------------------------------
+app.get('/api/dashboard', (req, res) => {
+    res.json(dashboard.build(req.query));
+});
 
 // ---- Job Cards -------------------------------------------------------------
 app.get('/api/jobcards', (req, res) => {

@@ -563,6 +563,93 @@
             <datalist id="mechanicDatalist"></datalist>
 
             <section id="view-dashboard" class="route-view hidden space-y-6">
+                <!-- ===== Unified Command Centre (server-side analytics, filterable) ===== -->
+                <div class="space-y-5">
+                    <div class="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
+                        <div>
+                            <h2 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Command Centre</h2>
+                            <p class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-1">Workshop &amp; stores at a glance — spend, sourcing and job cost.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div class="flex rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0">
+                                <button onclick="dashPreset('month')" id="dashPresetMonth" class="dash-preset px-3 py-2 text-xs font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300">Month</button>
+                                <button onclick="dashPreset('year')" id="dashPresetYear" class="dash-preset px-3 py-2 text-xs font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-l border-slate-200 dark:border-slate-700">Year</button>
+                                <button onclick="dashPreset('all')" id="dashPresetAll" class="dash-preset px-3 py-2 text-xs font-bold bg-indigo-600 text-white">All</button>
+                            </div>
+                            <input id="dashStart" type="date" onchange="dashClearPreset(); renderUnifiedDashboard()" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="dashEnd" type="date" onchange="dashClearPreset(); renderUnifiedDashboard()" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <select id="dashSource" onchange="renderUnifiedDashboard()" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40"><option value="">All sources</option><option value="local">Local</option><option value="headOffice">Head Office</option><option value="other">Other</option></select>
+                            <select id="dashCategory" onchange="renderUnifiedDashboard()" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40"><option value="">All categories</option></select>
+                            <input id="dashVehicle" list="vehicleDatalist" oninput="dashDebounced()" placeholder="Vehicle" class="w-28 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="dashSupplier" oninput="dashDebounced()" placeholder="Supplier" class="w-28 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <button onclick="dashReset()" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700">Reset</button>
+                        </div>
+                    </div>
+
+                    <!-- KPI tiles -->
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-2xl p-5 shadow-glow text-white">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-white/70">Spend · This Month</p>
+                            <h3 id="kpiMtd" class="text-2xl font-black mt-1.5 tracking-tight">Rs. 0</h3>
+                        </div>
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Spend · This Year</p>
+                            <h3 id="kpiYtd" class="text-2xl font-black text-slate-800 dark:text-white mt-1.5 tracking-tight">Rs. 0</h3>
+                        </div>
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark">
+                            <p id="kpiPeriodLabel" class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Spend · All Time</p>
+                            <h3 id="kpiPeriod" class="text-2xl font-black text-slate-800 dark:text-white mt-1.5 tracking-tight">Rs. 0</h3>
+                        </div>
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Active Jobs · Job Cost</p>
+                            <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1.5 tracking-tight"><span id="kpiJobs">0</span> <span id="kpiJobCost" class="text-sm font-bold text-slate-400">Rs. 0</span></h3>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        <!-- Local vs Head Office -->
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-6 shadow-glass-light dark:shadow-glass-dark">
+                            <h3 class="text-xs font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Received Value — Local vs Head Office</h3>
+                            <div class="w-full bg-slate-100 dark:bg-slate-800/80 rounded-full h-3 overflow-hidden flex mb-4">
+                                <div id="dashBarHo" class="bg-indigo-600 dark:bg-indigo-500 h-full transition-all" style="width:0%"></div>
+                                <div id="dashBarLocal" class="bg-emerald-500 h-full transition-all" style="width:0%"></div>
+                                <div id="dashBarOther" class="bg-slate-400 h-full transition-all" style="width:0%"></div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-3 text-center">
+                                <div><div class="flex items-center justify-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-600"></span><span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Head Office</span></div><div id="dashHo" class="text-base font-black text-slate-800 dark:text-white mt-1">Rs. 0</div></div>
+                                <div><div class="flex items-center justify-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Local</span></div><div id="dashLocal" class="text-base font-black text-slate-800 dark:text-white mt-1">Rs. 0</div></div>
+                                <div><div class="flex items-center justify-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-400"></span><span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Other</span></div><div id="dashOther" class="text-base font-black text-slate-800 dark:text-white mt-1">Rs. 0</div></div>
+                            </div>
+                        </div>
+                        <!-- Supplier distribution -->
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-6 shadow-glass-light dark:shadow-glass-dark">
+                            <h3 class="text-xs font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Supplier Spend Distribution</h3>
+                            <div class="flex items-center gap-4">
+                                <div class="relative w-32 h-32 shrink-0"><canvas id="dashSupplierChart"></canvas></div>
+                                <div id="dashSupplierList" class="flex-grow space-y-1.5 min-w-0"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Daily received split -->
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-glass-light dark:shadow-glass-dark overflow-hidden">
+                        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+                            <h3 class="text-xs font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Daily Received Value — Local vs Head Office</h3>
+                            <span id="dashDailyHint" class="text-[11px] font-semibold text-slate-400"></span>
+                        </div>
+                        <div class="overflow-x-auto max-h-80 overflow-y-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-slate-50 dark:bg-slate-900/80 sticky top-0">
+                                    <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                        <th class="px-6 py-3">Date</th><th class="px-6 py-3 text-right">Head Office</th><th class="px-6 py-3 text-right">Local</th><th class="px-6 py-3 text-right">Other</th><th class="px-6 py-3 text-right">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dashDailyBody" class="divide-y divide-slate-100 dark:divide-slate-800/70"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Premium Analytics / KPI Cards Section -->
                 <div class="space-y-4">
                     <h2 class="text-xs font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Financial Overview</h2>
@@ -5261,6 +5348,7 @@
             switch(currentView) {
                 case 'dashboard':
                     renderDashboard();
+                    if (typeof renderUnifiedDashboard === 'function') renderUnifiedDashboard();
                     break;
                 case 'jobcards':
                     renderJobCards();
@@ -7760,6 +7848,115 @@
             const cur = sel.value;
             sel.innerHTML = '<option value="">— No job card —</option>' + active.map((j) => `<option value="${j.id}">${jcEsc(j.jobNo)} · ${jcEsc(j.vehicleMachinery || '')}</option>`).join('');
             sel.value = cur;
+        }
+    </script>
+
+    <!-- Unified Command Centre dashboard module (Phase 5) -->
+    <script>
+        let dashSupplierChartInstance = null;
+        let dashDebTimer = null;
+        let dashCatsLoaded = false;
+        let dashActivePreset = 'all';
+        const DASH_COLORS = ['#12b389', '#0d906e', '#32cc9e', '#0b7c5e', '#67e2ba', '#105945', '#a0f0d4', '#0e7055', '#cff9ea', '#114a3a', '#94a3b8', '#cbd5e1'];
+        const dMonthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
+        const dYearStart = () => `${new Date().getFullYear()}-01-01`;
+        const dToday = () => new Date().toISOString().slice(0, 10);
+        const dCur = (n) => (typeof formatCurrency === 'function') ? formatCurrency(n) : ('Rs. ' + Number(n || 0).toLocaleString());
+
+        async function loadDashCategories() {
+            if (dashCatsLoaded) return; dashCatsLoaded = true;
+            try {
+                const data = await (await fetch('/api/categories')).json();
+                const sel = document.getElementById('dashCategory'); if (!sel) return;
+                (data.categories || []).forEach((c) => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+            } catch (e) { dashCatsLoaded = false; }
+        }
+        function dashSetPresetUI() {
+            ['Month', 'Year', 'All'].forEach((p) => {
+                const el = document.getElementById('dashPreset' + p); if (!el) return;
+                const on = dashActivePreset === p.toLowerCase();
+                el.className = 'dash-preset px-3 py-2 text-xs font-bold ' + (on ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300') + (p !== 'Month' ? ' border-l border-slate-200 dark:border-slate-700' : '');
+            });
+        }
+        function dashPreset(p) {
+            const start = document.getElementById('dashStart'), end = document.getElementById('dashEnd');
+            if (p === 'month') { start.value = dMonthStart(); end.value = dToday(); }
+            else if (p === 'year') { start.value = dYearStart(); end.value = dToday(); }
+            else { start.value = ''; end.value = ''; }
+            dashActivePreset = p; dashSetPresetUI(); renderUnifiedDashboard();
+        }
+        function dashClearPreset() { dashActivePreset = null; dashSetPresetUI(); }
+        function dashReset() {
+            ['dashStart', 'dashEnd', 'dashSource', 'dashCategory', 'dashVehicle', 'dashSupplier'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+            dashActivePreset = 'all'; dashSetPresetUI(); renderUnifiedDashboard();
+        }
+        function dashDebounced() { clearTimeout(dashDebTimer); dashDebTimer = setTimeout(renderUnifiedDashboard, 350); }
+
+        function dashQuery() {
+            const g = (id) => (document.getElementById(id) || {}).value || '';
+            const q = new URLSearchParams();
+            if (g('dashStart')) q.set('startDate', g('dashStart'));
+            if (g('dashEnd')) q.set('endDate', g('dashEnd'));
+            if (g('dashSource')) q.set('source', g('dashSource'));
+            if (g('dashCategory')) q.set('category', g('dashCategory'));
+            if (g('dashVehicle')) q.set('vehicle', g('dashVehicle').trim());
+            if (g('dashSupplier')) q.set('supplier', g('dashSupplier').trim());
+            return q;
+        }
+
+        async function renderUnifiedDashboard() {
+            loadDashCategories();
+            dashSetPresetUI();
+            let o; try { o = await (await fetch('/api/dashboard?' + dashQuery().toString())).json(); } catch (e) { return; }
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+            set('kpiMtd', dCur(o.spend.mtd));
+            set('kpiYtd', dCur(o.spend.ytd));
+            const hasRange = !!(o.filters.startDate || o.filters.endDate);
+            set('kpiPeriodLabel', hasRange ? 'Spend · Selected Period' : 'Spend · All Time');
+            set('kpiPeriod', dCur(o.spend.period));
+            set('kpiJobs', o.jobs.active);
+            set('kpiJobCost', dCur(o.jobs.totalCost));
+
+            // Local vs Head Office split
+            const rc = o.received; const tot = rc.total || 0;
+            const pct = (v) => tot > 0 ? Math.round((v / tot) * 100) : 0;
+            const bHo = document.getElementById('dashBarHo'), bLo = document.getElementById('dashBarLocal'), bOt = document.getElementById('dashBarOther');
+            if (bHo) bHo.style.width = pct(rc.headOffice) + '%';
+            if (bLo) bLo.style.width = pct(rc.local) + '%';
+            if (bOt) bOt.style.width = pct(rc.other) + '%';
+            set('dashHo', dCur(rc.headOffice)); set('dashLocal', dCur(rc.local)); set('dashOther', dCur(rc.other));
+
+            // Supplier distribution
+            const sup = o.suppliers || [];
+            const listEl = document.getElementById('dashSupplierList');
+            if (listEl) listEl.innerHTML = sup.length ? sup.slice(0, 6).map((s, i) => `
+                <div class="flex items-center justify-between gap-2 text-xs">
+                    <span class="flex items-center gap-1.5 min-w-0"><span class="w-2 h-2 rounded-full shrink-0" style="background:${DASH_COLORS[i % DASH_COLORS.length]}"></span><span class="font-semibold text-slate-600 dark:text-slate-300 truncate">${jcEsc(s.supplier)}</span></span>
+                    <span class="font-bold text-slate-800 dark:text-slate-100 shrink-0">${dCur(s.spend)} <span class="text-slate-400 font-semibold">${s.pct}%</span></span>
+                </div>`).join('') : '<div class="text-xs text-slate-400 italic">No priced receipts in range.</div>';
+            const ctx = document.getElementById('dashSupplierChart');
+            if (ctx && typeof Chart !== 'undefined') {
+                if (dashSupplierChartInstance) dashSupplierChartInstance.destroy();
+                dashSupplierChartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: { labels: sup.map((s) => s.supplier), datasets: [{ data: sup.map((s) => s.spend), backgroundColor: sup.map((s, i) => DASH_COLORS[i % DASH_COLORS.length]), borderWidth: 0 }] },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '64%', plugins: { legend: { display: false } } }
+                });
+            }
+
+            // Daily split table
+            const body = document.getElementById('dashDailyBody');
+            const daily = o.daily || [];
+            if (body) body.innerHTML = daily.length ? daily.map((d) => `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <td class="px-6 py-2.5 font-bold text-slate-700 dark:text-slate-200">${jcDate(d.day)}</td>
+                    <td class="px-6 py-2.5 text-right text-indigo-700 dark:text-indigo-400 font-semibold">${d.headOffice ? dCur(d.headOffice) : '—'}</td>
+                    <td class="px-6 py-2.5 text-right text-emerald-600 dark:text-emerald-400 font-semibold">${d.local ? dCur(d.local) : '—'}</td>
+                    <td class="px-6 py-2.5 text-right text-slate-500 font-semibold">${d.other ? dCur(d.other) : '—'}</td>
+                    <td class="px-6 py-2.5 text-right font-extrabold text-slate-900 dark:text-white">${dCur(d.total)}</td>
+                </tr>`).join('') : '<tr><td colspan="5" class="px-6 py-8 text-center text-sm font-semibold text-slate-400">No received deliveries in range.</td></tr>';
+            const hint = document.getElementById('dashDailyHint');
+            if (hint) hint.textContent = daily.length ? `${daily.length} day${daily.length !== 1 ? 's' : ''}` : '';
         }
     </script>
 

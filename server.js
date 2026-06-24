@@ -18,21 +18,76 @@ const { PDFParse } = require('pdf-parse');
 const dbApi = require('./db');
 const { toISO, nowISO } = dbApi;
 const { classify, CATEGORIES } = require('./categorize');
+const auth = require('./auth');
 
 dbApi.init();
+auth.ensureSeedUser();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(express.json({ limit: '100mb' }));
 
+// Resolve the logged-in user (if any) for every request from its session cookie.
+app.use(auth.attachUser);
+
 // Disable caching for API routes to ensure network clients always get fresh data
 app.use('/api', (req, res, next) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     next();
 });
+
+// ---- Authentication routes (public) ---------------------------------------
+app.get('/login', (req, res) => {
+    if (req.user) return res.redirect('/item_tracker.html');
+    res.sendFile(path.join(__dirname, 'login.html'));
+});
+
+app.post('/api/login', (req, res) => {
+    const username = String((req.body && req.body.username) || '').trim().toLowerCase();
+    const password = String((req.body && req.body.password) || '');
+    if (!username || !password) return res.status(400).json({ error: 'Username and password are required.' });
+    const user = dbApi.get('SELECT * FROM users WHERE LOWER(username)=? AND active=1', [username]);
+    if (!user || !auth.verifyPassword(password, user.passwordSalt, user.passwordHash)) {
+        return res.status(401).json({ error: 'Invalid username or password.' });
+    }
+    auth.createSession(res, user.id);
+    res.json({ success: true, user: auth.publicUser(user) });
+});
+
+app.post('/api/logout', (req, res) => {
+    auth.destroySession(req, res);
+    res.json({ success: true });
+});
+
+app.get('/api/me', (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Not authenticated.' });
+    res.json({ user: auth.publicUser(req.user) });
+});
+
+// Change own password (forced first-login change + account screen).
+app.post('/api/account/password', auth.requireApiAuth, (req, res) => {
+    const newPassword = String((req.body && req.body.newPassword) || '');
+    const currentPassword = String((req.body && req.body.currentPassword) || '');
+    if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+    if (!req.user.mustChangePassword) {
+        if (!auth.verifyPassword(currentPassword, req.user.passwordSalt, req.user.passwordHash)) {
+            return res.status(403).json({ error: 'Current password is incorrect.' });
+        }
+    }
+    const { salt, hash } = auth.hashPassword(newPassword);
+    dbApi.run('UPDATE users SET passwordHash=?, passwordSalt=?, mustChangePassword=0 WHERE id=?', [hash, salt, req.user.id]);
+    res.json({ success: true });
+});
+
+// ---- Gate everything else behind authentication ---------------------------
+app.use('/api', auth.requireApiAuth);
+app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res, next) => {
+    if (req.path === '/') return res.redirect('/item_tracker.html');
+    next();
+});
+
 app.use(express.static(__dirname));
-app.get('/', (req, res) => res.redirect('/item_tracker.html'));
 
 // --- helpers ----------------------------------------------------------------
 const s = (v) => (v === null || v === undefined) ? '' : String(v);

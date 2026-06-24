@@ -242,6 +242,32 @@ function init() {
         CREATE INDEX IF NOT EXISTS idx_transfers_mtn ON material_transfers(mtnNum);
     `);
 
+    // ---- Auth: users + sessions (combined Workshop + Store system) ---------
+    exec(`
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            name TEXT,
+            designation TEXT,
+            email TEXT,
+            roles TEXT,                       -- JSON array e.g. '["ADMIN"]'
+            passwordHash TEXT,
+            passwordSalt TEXT,
+            active INTEGER DEFAULT 1,
+            mustChangePassword INTEGER DEFAULT 0,
+            createdAt TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS sessions (
+            sid TEXT PRIMARY KEY,
+            userId INTEGER,
+            createdAt TEXT,
+            expiresAt TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sessions_userId ON sessions(userId);
+    `);
+
     // Lightweight migration: add the category column if upgrading an older DB.
     try {
         const cols = all(`PRAGMA table_info(items)`);

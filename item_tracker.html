@@ -169,6 +169,24 @@
                         </svg>
                     </button>
 
+                    <!-- Current User + Sign out -->
+                    <div class="relative" id="userMenuContainer">
+                        <button onclick="toggleUserDropdown()" class="flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 bg-indigo-900/50 hover:bg-indigo-900/90 dark:bg-slate-800/50 dark:hover:bg-slate-800 rounded-2xl border border-indigo-900/80 dark:border-slate-700/80 transition duration-200" title="Account">
+                            <span id="userAvatar" class="w-7 h-7 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-700 text-white grid place-items-center text-[11px] font-extrabold">–</span>
+                            <span class="hidden sm:flex flex-col items-start leading-none">
+                                <span id="userName" class="text-xs font-bold text-white">…</span>
+                                <span id="userRole" class="text-[10px] font-semibold text-indigo-300 dark:text-slate-400 mt-0.5"></span>
+                            </span>
+                            <svg class="w-3.5 h-3.5 text-indigo-300 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+                        <div id="userDropdown" class="hidden absolute right-0 mt-2 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl z-50 overflow-hidden glass-panel">
+                            <button onclick="logout()" class="w-full text-left px-4 py-3 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition flex items-center gap-2.5 font-semibold">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                                Sign out
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Dropdown Actions Menu -->
                     <div class="relative" id="actionsDropdownContainer">
                         <button onclick="toggleActionsDropdown()" class="px-4 py-2.5 bg-gradient-to-r from-indigo-900 to-indigo-850 dark:from-slate-800 dark:to-slate-750 text-indigo-100 hover:text-white dark:text-slate-200 font-semibold rounded-2xl transition-all duration-200 border border-indigo-800/60 dark:border-slate-700 outline-none flex items-center gap-2 text-sm shadow-sm" title="Database Actions">
@@ -6978,6 +6996,52 @@
 
         function loadItems() {
             loadAllData();
+        }
+    </script>
+
+    <!-- Auth wiring for the unified Workshop + Stores system -->
+    <script>
+        (function () {
+            // Any API call that reports an expired/missing session sends us back to login.
+            const _fetch = window.fetch;
+            window.fetch = function (...args) {
+                return _fetch.apply(this, args).then((res) => {
+                    if (res && res.status === 401) { window.location.href = '/login'; }
+                    return res;
+                });
+            };
+            const initials = (name, username) => {
+                const base = (name || username || '?').trim();
+                const parts = base.split(/\s+/).filter(Boolean);
+                const a = (parts[0] || '?')[0] || '?';
+                const b = parts.length > 1 ? (parts[parts.length - 1][0] || '') : '';
+                return (a + b).toUpperCase();
+            };
+            const titleCase = (s) => String(s || '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+            fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then((data) => {
+                if (!data || !data.user) return;
+                const u = data.user;
+                const av = document.getElementById('userAvatar');
+                const nm = document.getElementById('userName');
+                const rl = document.getElementById('userRole');
+                if (av) av.textContent = initials(u.name, u.username);
+                if (nm) nm.textContent = u.name || u.username;
+                if (rl) rl.textContent = (u.roles && u.roles[0]) ? titleCase(u.roles[0]) : '';
+            }).catch(() => {});
+        })();
+
+        function toggleUserDropdown() {
+            const d = document.getElementById('userDropdown');
+            if (d) d.classList.toggle('hidden');
+        }
+        document.addEventListener('click', function (e) {
+            const c = document.getElementById('userMenuContainer');
+            const d = document.getElementById('userDropdown');
+            if (c && d && !c.contains(e.target)) d.classList.add('hidden');
+        });
+        async function logout() {
+            try { await fetch('/api/logout', { method: 'POST' }); } catch (_) {}
+            window.location.href = '/login';
         }
     </script>
 </body>

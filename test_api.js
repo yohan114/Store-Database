@@ -10,11 +10,26 @@ let pass = 0, fail = 0;
 const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${extra ? '  ' + extra : ''}`); };
 
 (async () => {
-    // wait for listen
+    // wait for listen (any HTTP response means the server is up)
     for (let i = 0; i < 40; i++) {
-        try { const r = await fetch(BASE + '/api/categories'); if (r.ok) break; } catch (_) {}
+        try { await fetch(BASE + '/login'); break; } catch (_) {}
         await delay(100);
     }
+
+    // The API now sits behind a login. Authenticate, then inject the session
+    // cookie into every subsequent request via a thin fetch wrapper.
+    const _fetch = global.fetch;
+    let COOKIE = '';
+    global.fetch = (url, opts = {}) => {
+        const headers = Object.assign({}, opts.headers || {});
+        if (COOKIE) headers['Cookie'] = COOKIE;
+        return _fetch(url, Object.assign({}, opts, { headers }));
+    };
+    { const r = await _fetch(BASE + '/api/items?limit=1'); ok(r.status === 401, 'unauthenticated /api request returns 401'); }
+    const loginRes = await _fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'admin123' }) });
+    const setCookie = loginRes.headers.get('set-cookie');
+    COOKIE = setCookie ? setCookie.split(';')[0] : '';
+    ok(loginRes.status === 200 && !!COOKIE, 'POST /api/login authenticates as admin');
 
     // categories
     let { body: cats } = await j(await fetch(BASE + '/api/categories'));
@@ -291,6 +306,47 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     // 7. Verify deletion
     let { status: mtGoneStatus } = await j(await fetch(BASE + '/api/transfers/' + transferId));
     ok(mtGoneStatus === 404, 'Transfer cleanup verified');
+
+    // === JOB CARD / DAILY PROGRAMME / DASHBOARD TESTS ===
+    console.log('\n--- Running Job Card / Daily Programme / Dashboard API Tests ---');
+
+    let { body: jcRes } = await j(await fetch(BASE + '/api/jobcards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'INTERNAL', vehicleMachinery: 'TEST-VH', details: 'API test job' }) }));
+    ok(jcRes.success && jcRes.jobcard && /^JC-\d{4}-\d{4}$/.test(jcRes.jobcard.jobNo), 'POST /api/jobcards creates with JC number', jcRes.jobcard && jcRes.jobcard.jobNo);
+    const jcId = jcRes.jobcard.id;
+
+    let { body: stRes } = await j(await fetch(BASE + `/api/jobcards/${jcId}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'IN_PROGRESS' }) }));
+    ok(stRes.success && stRes.jobcard.status === 'IN_PROGRESS' && !!stRes.jobcard.startedAt, 'POST status OPEN -> IN_PROGRESS');
+
+    let { status: badSt } = await j(await fetch(BASE + `/api/jobcards/${jcId}/status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'CLOSED' }) }));
+    ok(badSt === 400, 'illegal status transition rejected (400)');
+
+    let { body: dpRes } = await j(await fetch(BASE + `/api/jobcards/${jcId}/programme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entryDate: '2026-06-10', mechanics: 'Saman, Vinod', hours: 8, workDescription: 'Test work' }) }));
+    ok(dpRes.success && dpRes.entry.labourCost === 3200, 'POST programme computes labour (8h: Saman+Vinod = 3200)', 'labour=' + (dpRes.entry && dpRes.entry.labourCost));
+    const dpId = dpRes.entry.id;
+
+    let { body: jcGet } = await j(await fetch(BASE + '/api/jobcards/' + jcId));
+    ok(jcGet.labourCost === 3200 && jcGet.programme.length === 1, 'job labourCost rolled up from programme');
+
+    let { body: mItem } = await j(await fetch(BASE + '/api/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mrnNum: 'JCLINK-1', itemName: 'Test part', vehicleMachinery: 'TEST-VH', reqQty: 1, jobCardId: jcId }) }));
+    await j(await fetch(BASE + `/api/items/${mItem.id}/receipts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qty: 1, transactionType: 'Receive', unitPrice: 500, deliveryDate: '2026-06-10' }) }));
+    ({ body: jcGet } = await j(await fetch(BASE + '/api/jobcards/' + jcId)));
+    ok(jcGet.partsCost === 500 && jcGet.totalCost === 3700, 'parts cost from linked MRN + total job cost (500 + 3200 = 3700)', 'total=' + jcGet.totalCost);
+
+    let { body: dash } = await j(await fetch(BASE + '/api/dashboard'));
+    ok(typeof dash.spend.mtd === 'number' && typeof dash.spend.ytd === 'number' && !!dash.received && Array.isArray(dash.suppliers) && !!dash.jobs, 'GET /api/dashboard returns spend/received/suppliers/jobs');
+
+    let { body: dashLocal } = await j(await fetch(BASE + '/api/dashboard?source=local'));
+    ok(dashLocal.received.headOffice === 0, 'dashboard source=local filter excludes head office');
+
+    let { body: mechs } = await j(await fetch(BASE + '/api/mechanics'));
+    ok(Array.isArray(mechs.mechanics) && mechs.mechanics.length >= 20, 'GET /api/mechanics seeded', 'count=' + mechs.mechanics.length);
+
+    // cleanup
+    await j(await fetch(BASE + '/api/programme/' + dpId, { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/items/' + mItem.id + '?password=E%26CWorkshop', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/jobcards/' + jcId, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    let { status: goneSt } = await j(await fetch(BASE + '/api/jobcards/' + jcId));
+    ok(goneSt === 404, 'job card cleanup verified');
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

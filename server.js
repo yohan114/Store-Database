@@ -1092,6 +1092,26 @@ app.get('/api/export/excel', (req, res) => {
         }
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(transfersSheet), 'Material Transfers');
 
+        // --- Job Cards sheet (with parts + labour + total cost) ---
+        const jobRows = dbApi.all(`SELECT j.*,
+            COALESCE((SELECT SUM(CASE WHEN r.transactionType='Receive' AND r.unitPrice IS NOT NULL THEN r.qty*r.unitPrice ELSE 0 END)
+                      FROM receipts r JOIN items i ON i.id=r.itemId WHERE i.jobCardId=j.id),0) AS partsCost
+            FROM jobcards j ORDER BY j.id DESC`);
+        const jobSheet = [['Job No', 'Type', 'Status', 'Date', 'Vehicle/Machinery', 'Project', 'Repair Type', 'Driver', 'Labour (Rs.)', 'Parts (Rs.)', 'Total Job Cost (Rs.)', 'Details']];
+        for (const jc of jobRows) {
+            const parts = Math.round((jc.partsCost || 0) * 100) / 100;
+            jobSheet.push([jc.jobNo || '', jc.type || '', jc.status || '', jc.dateISO || jc.date || '', jc.vehicleMachinery || '', jc.projectName || '', jc.repairType || '', jc.driverName || '', jc.labourCost || 0, parts, Math.round(((jc.labourCost || 0) + parts) * 100) / 100, jc.details || '']);
+        }
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(jobSheet), 'Job Cards');
+
+        // --- Daily Programme sheet ---
+        const dpRows = dbApi.all(`SELECT dp.*, j.jobNo AS jobNo FROM daily_programme dp LEFT JOIN jobcards j ON j.id=dp.jobCardId ORDER BY dp.entryDateISO DESC, dp.id DESC`);
+        const dpSheet = [['Date', 'Job No', 'Vehicle/Machinery', 'Work Done', 'Mechanics', 'Hours', 'Labour (Rs.)', 'Outside Value (Rs.)', 'Remarks']];
+        for (const e of dpRows) {
+            dpSheet.push([e.entryDateISO || e.entryDate || '', e.jobNo || '', e.vehicleMachinery || '', e.workDescription || '', e.mechanics || '', e.hours || 0, e.labourCost || 0, e.outsideValue || 0, e.remarks || '']);
+        }
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dpSheet), 'Daily Programme');
+
         const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
         res.setHeader('Content-Disposition', 'attachment; filename="inventory_report.xlsx"');
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

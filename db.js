@@ -302,6 +302,33 @@ function init() {
         CREATE INDEX IF NOT EXISTS idx_jobaudits_card   ON job_audits(jobCardId);
     `);
 
+    // ---- Daily Programme (child of a job card) + mechanic rates ------------
+    exec(`
+        CREATE TABLE IF NOT EXISTS daily_programme (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jobCardId INTEGER NOT NULL,
+            entryDate TEXT, entryDateISO TEXT,
+            vehicleMachinery TEXT,
+            workDescription TEXT,
+            mechanics TEXT,                   -- comma-separated names
+            hours REAL DEFAULT 0,
+            outsideValue REAL DEFAULT 0,
+            remarks TEXT,
+            labourCost REAL DEFAULT 0,        -- computed from mechanics + hours + rates
+            createdBy INTEGER, createdAt TEXT, updatedAt TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS mechanics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            hourlyRate REAL,                  -- NULL/0 => excluded from labour cost
+            active INTEGER DEFAULT 1
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_dp_jobCard ON daily_programme(jobCardId);
+        CREATE INDEX IF NOT EXISTS idx_dp_dateISO ON daily_programme(entryDateISO);
+    `);
+
     // Lightweight migration: add the category column if upgrading an older DB.
     try {
         const cols = all(`PRAGMA table_info(items)`);

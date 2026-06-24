@@ -20,9 +20,11 @@ const { toISO, nowISO } = dbApi;
 const { classify, CATEGORIES } = require('./categorize');
 const auth = require('./auth');
 const jobcards = require('./jobcards');
+const programme = require('./programme');
 
 dbApi.init();
 auth.ensureSeedUser();
+programme.ensureSeedMechanics();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -115,6 +117,43 @@ app.post('/api/jobcards/:id/status', (req, res) => {
 });
 app.delete('/api/jobcards/:id', auth.requireRole('ADMIN'), (req, res) => {
     res.json(jobcards.remove(req.params.id));
+});
+
+// ---- Daily Programme (child of a job card) + mechanic rates ----------------
+app.get('/api/jobcards/:id/programme', (req, res) => {
+    res.json({ programme: programme.listForJob(req.params.id) });
+});
+app.post('/api/jobcards/:id/programme', (req, res) => {
+    const r = programme.create(req.params.id, req.body || {}, req.user);
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json({ success: true, entry: r.entry });
+});
+app.put('/api/programme/:id', (req, res) => {
+    const r = programme.update(req.params.id, req.body || {}, req.user);
+    if (r.error) return res.status(404).json({ error: r.error });
+    res.json({ success: true, entry: r.entry });
+});
+app.delete('/api/programme/:id', (req, res) => {
+    res.json(programme.remove(req.params.id));
+});
+// "Today" view across all jobs.
+app.get('/api/programme', (req, res) => {
+    const dateISO = req.query.dateISO || new Date().toISOString().slice(0, 10);
+    res.json({ dateISO, programme: programme.listByDate(dateISO) });
+});
+// Mechanic rates admin.
+app.get('/api/mechanics', (req, res) => {
+    res.json({ mechanics: programme.mechanicsList() });
+});
+app.post('/api/mechanics', (req, res) => {
+    const r = programme.mechanicAdd(req.body || {});
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json({ success: true, mechanic: r.mechanic });
+});
+app.put('/api/mechanics/:id', (req, res) => {
+    const r = programme.mechanicUpdate(req.params.id, req.body || {});
+    if (r.error) return res.status(404).json({ error: r.error });
+    res.json({ success: true, mechanic: r.mechanic });
 });
 
 // --- helpers ----------------------------------------------------------------

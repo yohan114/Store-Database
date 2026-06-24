@@ -247,6 +247,12 @@
                     </span>
                     <span id="count-jobcards" class="sidebar-badge bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-0.5 px-3 rounded-full text-xs font-extrabold transition-all">0</span>
                 </a>
+                <a href="#programme" id="nav-programme" class="sidebar-btn w-full flex items-center justify-between px-3.5 py-3 text-slate-655 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-semibold rounded-2xl transition-all duration-200 border border-transparent outline-none">
+                    <span class="flex items-center">
+                        <svg class="sidebar-icon w-5 h-5 mr-3 text-slate-400 dark:text-slate-500 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span class="sidebar-text">Daily Programme</span>
+                    </span>
+                </a>
                 <a href="#tracker" id="nav-tracker" class="sidebar-btn w-full flex items-center justify-between px-3.5 py-3 text-slate-655 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-semibold rounded-2xl transition-all duration-200 border border-transparent outline-none">
                     <span class="flex items-center">
                         <svg class="sidebar-icon w-5 h-5 mr-3 text-slate-400 dark:text-slate-500 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"></path></svg>
@@ -466,6 +472,95 @@
                     <div id="jobCardModalContent" class="p-6 sm:p-8"></div>
                 </div>
             </div>
+
+            <!-- ============================ DAILY PROGRAMME (today view) ============================ -->
+            <section id="view-programme" class="route-view hidden space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Daily Programme</h2>
+                        <p class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-1">Log each day's work against a job card. Labour cost is calculated from mechanic hours &amp; rates.</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <input id="dpViewDate" type="date" onchange="renderProgramme()" class="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <button onclick="openMechanicsModal()" class="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition whitespace-nowrap">Mechanics &amp; Rates</button>
+                    </div>
+                </div>
+
+                <!-- Quick add -->
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm p-5 sm:p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 id="dpqHeading" class="text-sm font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Add Today's Work</h3>
+                        <span id="dpqEditBadge" class="hidden text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-2 py-1 rounded-lg">Editing</span>
+                    </div>
+                    <input type="hidden" id="dpqEditId">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="lg:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Job Card</label>
+                            <select id="dpqJob" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40"></select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Hours</label>
+                            <input id="dpqHours" type="number" step="any" min="0" placeholder="e.g. 8" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Outside Value (Rs.)</label>
+                            <input id="dpqOutside" type="number" step="any" min="0" placeholder="0" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Mechanics <span class="text-slate-400 normal-case font-medium">(comma separated)</span></label>
+                            <input id="dpqMechanics" list="mechanicDatalist" placeholder="e.g. Saman, Vinod" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Work Done</label>
+                            <input id="dpqWork" placeholder="Describe the day's work…" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        </div>
+                    </div>
+                    <div id="dpqError" class="hidden mt-3 text-sm font-semibold text-rose-500"></div>
+                    <div class="flex items-center justify-end gap-3 mt-4">
+                        <button id="dpqCancel" onclick="resetDailyForm()" class="hidden px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Cancel</button>
+                        <button onclick="saveDailyEntry()" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-400 hover:to-indigo-600 text-white text-sm font-bold shadow-sm transition">Save Entry</button>
+                    </div>
+                </div>
+
+                <!-- Summary + list -->
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Entries</div><div id="dpSumCount" class="text-xl font-black text-slate-800 dark:text-white mt-0.5">0</div></div>
+                    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Hours</div><div id="dpSumHours" class="text-xl font-black text-slate-800 dark:text-white mt-0.5">0</div></div>
+                    <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-2xl p-4"><div class="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Labour (Rs.)</div><div id="dpSumLabour" class="text-xl font-black text-indigo-700 dark:text-indigo-400 mt-0.5">0</div></div>
+                </div>
+
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-150 dark:border-slate-800">
+                                <tr class="text-left text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                    <th class="px-5 py-4">Job</th><th class="px-5 py-4">Work / Mechanics</th>
+                                    <th class="px-5 py-4 text-right">Hours</th><th class="px-5 py-4 text-right">Labour</th><th class="px-5 py-4 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="programmeTodayBody" class="divide-y divide-slate-100 dark:divide-slate-800/70"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Mechanics & Rates modal -->
+            <div id="mechanicsModal" class="hidden fixed inset-0 z-[60] flex items-start justify-center p-4 sm:p-8 overflow-y-auto">
+                <div class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onclick="closeMechanicsModal()"></div>
+                <div class="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl my-4 p-6 sm:p-7">
+                    <div class="flex items-center justify-between mb-5">
+                        <h3 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Mechanics &amp; Hourly Rates</h3>
+                        <button onclick="closeMechanicsModal()" class="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                    </div>
+                    <div class="flex gap-2 mb-4">
+                        <input id="newMechName" placeholder="New mechanic name" class="flex-grow px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <input id="newMechRate" type="number" step="any" placeholder="Rs./hr" class="w-24 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <button onclick="addMechanic()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-sm font-bold">Add</button>
+                    </div>
+                    <div id="mechanicsListBody" class="space-y-2 max-h-[50vh] overflow-y-auto"></div>
+                </div>
+            </div>
+            <datalist id="mechanicDatalist"></datalist>
 
             <section id="view-dashboard" class="route-view hidden space-y-6">
                 <!-- Premium Analytics / KPI Cards Section -->
@@ -5095,7 +5190,7 @@
         // Central Router Engine
         function handleRouting() {
             const hash = window.location.hash || '#dashboard';
-            const views = ['dashboard', 'jobcards', 'jobcard-entry', 'tracker', 'receiving', 'pricing', 'fleet', 'issued', 'issue-desk', 'inventory', 'batteries', 'battery-entry', 'battery-move', 'transfers', 'transfer-entry'];
+            const views = ['dashboard', 'jobcards', 'jobcard-entry', 'programme', 'tracker', 'receiving', 'pricing', 'fleet', 'issued', 'issue-desk', 'inventory', 'batteries', 'battery-entry', 'battery-move', 'transfers', 'transfer-entry'];
             
             let matchedView = 'dashboard';
             let routeParam = null;
@@ -5166,6 +5261,9 @@
                     break;
                 case 'jobcard-entry':
                     setupJobCardEntry(param);
+                    break;
+                case 'programme':
+                    renderProgramme();
                     break;
                 case 'tracker':
                     renderTable();
@@ -7404,6 +7502,199 @@
                 if (btn) btn.disabled = false;
             }
         }
+    </script>
+
+    <!-- Daily Programme module (per-job log + Today view + mechanic rates) -->
+    <script>
+        const dpTodayISO = () => new Date().toISOString().slice(0, 10);
+
+        // ---- Programme section inside the Job Card detail modal ----
+        function renderJobProgramme(jc) {
+            const mount = document.getElementById('jcProgrammeMount');
+            if (!mount) return;
+            const entries = jc.programme || [];
+            window.__jcProgramme = {}; entries.forEach((e) => { window.__jcProgramme[e.id] = e; });
+            const rows = entries.map((e) => `
+                <div class="flex items-start justify-between gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
+                    <div class="min-w-0">
+                        <div class="text-xs font-bold text-slate-700 dark:text-slate-200">${jcDate(e.entryDateISO)} · ${e.hours || 0}h ${e.mechanics ? '· ' + jcEsc(e.mechanics) : ''}</div>
+                        ${e.workDescription ? `<div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${jcEsc(e.workDescription)}</div>` : ''}
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="text-xs font-extrabold text-slate-700 dark:text-slate-200">${jcCur(e.labourCost || 0)}</span>
+                        <button onclick="editJobDaily(${e.id})" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">Edit</button>
+                        <button onclick="deleteJobDaily(${e.id}, ${jc.id})" class="text-[11px] font-bold text-rose-500">Del</button>
+                    </div>
+                </div>`).join('');
+            mount.innerHTML = `
+                <div class="mt-2 mb-5 rounded-2xl border border-slate-150 dark:border-slate-800 overflow-hidden">
+                    <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-150 dark:border-slate-800">
+                        <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Daily Programme (${entries.length})</span>
+                        <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Labour: ${jcCur(jc.labourCost || 0)}</span>
+                    </div>
+                    <div class="px-4 py-2">${rows || '<div class="py-3 text-xs text-slate-400 italic">No daily entries yet.</div>'}</div>
+                    <div class="px-4 py-3 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800">
+                        <input type="hidden" id="jdpEditId">
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <input id="jdpDate" type="date" value="${dpTodayISO()}" class="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jdpHours" type="number" step="any" min="0" placeholder="Hours" class="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jdpMechanics" list="mechanicDatalist" placeholder="Mechanics" class="col-span-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jdpWork" placeholder="Work done" class="col-span-2 sm:col-span-3 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <button onclick="saveJobDaily(${jc.id})" class="px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Add</button>
+                        </div>
+                        <div id="jdpError" class="hidden mt-2 text-xs font-semibold text-rose-500"></div>
+                    </div>
+                </div>`;
+        }
+        function editJobDaily(id) {
+            const e = (window.__jcProgramme || {})[id]; if (!e) return;
+            document.getElementById('jdpEditId').value = e.id;
+            document.getElementById('jdpDate').value = e.entryDateISO || dpTodayISO();
+            document.getElementById('jdpHours').value = e.hours || '';
+            document.getElementById('jdpMechanics').value = e.mechanics || '';
+            document.getElementById('jdpWork').value = e.workDescription || '';
+        }
+        async function saveJobDaily(jobCardId) {
+            const editId = document.getElementById('jdpEditId').value;
+            const payload = {
+                entryDate: document.getElementById('jdpDate').value,
+                hours: document.getElementById('jdpHours').value,
+                mechanics: document.getElementById('jdpMechanics').value,
+                workDescription: document.getElementById('jdpWork').value,
+            };
+            const err = document.getElementById('jdpError');
+            try {
+                const url = editId ? '/api/programme/' + editId : '/api/jobcards/' + jobCardId + '/programme';
+                const res = await fetch(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (!res.ok) { if (err) { err.textContent = data.error || 'Could not save.'; err.classList.remove('hidden'); } return; }
+                openJobCardDetail(jobCardId);
+                if (typeof renderJobCards === 'function') renderJobCards();
+            } catch (e) { if (err) { err.textContent = 'Network error.'; err.classList.remove('hidden'); } }
+        }
+        async function deleteJobDaily(id, jobCardId) {
+            if (!confirm('Delete this daily entry?')) return;
+            try { await fetch('/api/programme/' + id, { method: 'DELETE' }); openJobCardDetail(jobCardId); if (typeof renderJobCards === 'function') renderJobCards(); } catch (e) {}
+        }
+
+        // ---- "Today" view ----
+        async function loadJobOptions(selectedId) {
+            const sel = document.getElementById('dpqJob'); if (!sel) return;
+            let data; try { data = await (await fetch('/api/jobcards?limit=300')).json(); } catch (e) { return; }
+            const active = (data.jobcards || []).filter((j) => j.status !== 'CLOSED');
+            sel.innerHTML = active.length
+                ? active.map((j) => `<option value="${j.id}">${jcEsc(j.jobNo)} · ${jcEsc(j.vehicleMachinery || '')}</option>`).join('')
+                : '<option value="">No open job cards — create one first</option>';
+            if (selectedId) sel.value = String(selectedId);
+        }
+        async function renderProgramme() {
+            const dateInput = document.getElementById('dpViewDate');
+            if (dateInput && !dateInput.value) dateInput.value = dpTodayISO();
+            const dateISO = (dateInput && dateInput.value) || dpTodayISO();
+            await loadJobOptions(document.getElementById('dpqJob') ? document.getElementById('dpqJob').value : null);
+            const body = document.getElementById('programmeTodayBody'); if (!body) return;
+            body.innerHTML = `<tr><td colspan="5" class="px-5 py-8 text-center text-sm font-semibold text-slate-400">Loading…</td></tr>`;
+            let data; try { data = await (await fetch('/api/programme?dateISO=' + encodeURIComponent(dateISO))).json(); } catch (e) { return; }
+            const entries = data.programme || [];
+            window.__todayProgramme = {}; entries.forEach((e) => { window.__todayProgramme[e.id] = e; });
+            let hrs = 0, lab = 0;
+            entries.forEach((e) => { hrs += Number(e.hours) || 0; lab += Number(e.labourCost) || 0; });
+            document.getElementById('dpSumCount').textContent = entries.length;
+            document.getElementById('dpSumHours').textContent = (Math.round(hrs * 100) / 100);
+            document.getElementById('dpSumLabour').textContent = jcCur(lab);
+            body.innerHTML = entries.length ? entries.map((e) => `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                    <td class="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">${jcEsc(e.jobNo || '—')}<div class="text-[10px] font-semibold text-slate-400">${jcEsc(e.vehicleMachinery || '')}</div></td>
+                    <td class="px-5 py-3"><div class="text-slate-700 dark:text-slate-300 font-semibold">${jcEsc(e.workDescription || '—')}</div><div class="text-[11px] text-slate-400 mt-0.5">${jcEsc(e.mechanics || '')}</div></td>
+                    <td class="px-5 py-3 text-right font-bold text-slate-700 dark:text-slate-300">${e.hours || 0}</td>
+                    <td class="px-5 py-3 text-right font-extrabold text-slate-800 dark:text-slate-100">${jcCur(e.labourCost || 0)}</td>
+                    <td class="px-5 py-3 text-right whitespace-nowrap">
+                        <button onclick="editDailyEntry(${e.id})" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mr-2">Edit</button>
+                        <button onclick="deleteTodayEntry(${e.id})" class="text-[11px] font-bold text-rose-500">Del</button>
+                    </td>
+                </tr>`).join('') : `<tr><td colspan="5" class="px-5 py-10 text-center text-sm font-semibold text-slate-400">No work logged for this date.</td></tr>`;
+        }
+        function resetDailyForm() {
+            ['dpqEditId', 'dpqHours', 'dpqOutside', 'dpqMechanics', 'dpqWork'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+            const b = document.getElementById('dpqEditBadge'); if (b) b.classList.add('hidden');
+            const c = document.getElementById('dpqCancel'); if (c) c.classList.add('hidden');
+            const h = document.getElementById('dpqHeading'); if (h) h.textContent = "Add Today's Work";
+        }
+        function editDailyEntry(id) {
+            const e = (window.__todayProgramme || {})[id]; if (!e) return;
+            document.getElementById('dpqEditId').value = e.id;
+            loadJobOptions(e.jobCardId);
+            document.getElementById('dpqHours').value = e.hours || '';
+            document.getElementById('dpqOutside').value = e.outsideValue || '';
+            document.getElementById('dpqMechanics').value = e.mechanics || '';
+            document.getElementById('dpqWork').value = e.workDescription || '';
+            const b = document.getElementById('dpqEditBadge'); if (b) b.classList.remove('hidden');
+            const c = document.getElementById('dpqCancel'); if (c) c.classList.remove('hidden');
+            const h = document.getElementById('dpqHeading'); if (h) h.textContent = 'Edit Entry';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        async function saveDailyEntry() {
+            const err = document.getElementById('dpqError'); if (err) err.classList.add('hidden');
+            const editId = document.getElementById('dpqEditId').value;
+            const jobCardId = document.getElementById('dpqJob').value;
+            const dateISO = (document.getElementById('dpViewDate') || {}).value || dpTodayISO();
+            if (!editId && !jobCardId) { if (err) { err.textContent = 'Select a job card.'; err.classList.remove('hidden'); } return; }
+            const payload = {
+                entryDate: dateISO,
+                hours: document.getElementById('dpqHours').value,
+                outsideValue: document.getElementById('dpqOutside').value,
+                mechanics: document.getElementById('dpqMechanics').value,
+                workDescription: document.getElementById('dpqWork').value,
+            };
+            try {
+                const url = editId ? '/api/programme/' + editId : '/api/jobcards/' + jobCardId + '/programme';
+                const res = await fetch(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (!res.ok) { if (err) { err.textContent = data.error || 'Could not save.'; err.classList.remove('hidden'); } return; }
+                resetDailyForm(); renderProgramme();
+            } catch (e) { if (err) { err.textContent = 'Network error.'; err.classList.remove('hidden'); } }
+        }
+        async function deleteTodayEntry(id) {
+            if (!confirm('Delete this daily entry?')) return;
+            try { await fetch('/api/programme/' + id, { method: 'DELETE' }); renderProgramme(); } catch (e) {}
+        }
+
+        // ---- Mechanics & rates ----
+        async function loadMechanicDatalist() {
+            let data; try { data = await (await fetch('/api/mechanics')).json(); } catch (e) { return; }
+            const dl = document.getElementById('mechanicDatalist');
+            if (dl) dl.innerHTML = (data.mechanics || []).filter((m) => m.active).map((m) => `<option value="${jcEsc(m.name)}">`).join('');
+        }
+        function openMechanicsModal() { const m = document.getElementById('mechanicsModal'); if (m) m.classList.remove('hidden'); renderMechanicsList(); }
+        function closeMechanicsModal() { const m = document.getElementById('mechanicsModal'); if (m) m.classList.add('hidden'); }
+        async function renderMechanicsList() {
+            const body = document.getElementById('mechanicsListBody'); if (!body) return;
+            let data; try { data = await (await fetch('/api/mechanics')).json(); } catch (e) { return; }
+            body.innerHTML = (data.mechanics || []).map((m) => `
+                <div class="flex items-center gap-2">
+                    <span class="flex-grow text-sm font-semibold text-slate-700 dark:text-slate-300 ${m.active ? '' : 'line-through opacity-50'}">${jcEsc(m.name)}</span>
+                    <input id="mrate-${m.id}" type="number" step="any" value="${m.hourlyRate == null ? '' : m.hourlyRate}" placeholder="—" class="w-24 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold text-right focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                    <button onclick="saveMechanic(${m.id}, ${m.active ? 1 : 0})" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700">Save</button>
+                </div>`).join('') || '<div class="text-sm text-slate-400">No mechanics.</div>';
+        }
+        async function saveMechanic(id, active) {
+            const rate = document.getElementById('mrate-' + id).value;
+            try { await fetch('/api/mechanics/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hourlyRate: rate, active }) }); await loadMechanicDatalist(); } catch (e) {}
+        }
+        async function addMechanic() {
+            const name = document.getElementById('newMechName').value;
+            const rate = document.getElementById('newMechRate').value;
+            if (!name.trim()) return;
+            try {
+                const res = await fetch('/api/mechanics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, hourlyRate: rate }) });
+                if (res.ok) { document.getElementById('newMechName').value = ''; document.getElementById('newMechRate').value = ''; renderMechanicsList(); loadMechanicDatalist(); }
+                else { const d = await res.json(); alert(d.error || 'Could not add.'); }
+            } catch (e) {}
+        }
+
+        // Populate mechanic datalist once the page is ready.
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadMechanicDatalist);
+        else loadMechanicDatalist();
     </script>
 
     <!-- Auth wiring for the unified Workshop + Stores system -->

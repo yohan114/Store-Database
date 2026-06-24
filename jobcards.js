@@ -129,10 +129,12 @@ function get(id) {
     if (!jc) return null;
     jc.audits = db.all('SELECT * FROM job_audits WHERE jobCardId=? ORDER BY id DESC', [id]);
     jc.availableStatuses = TRANSITIONS[jc.status] || [];
-    // Daily programme + parts cost are attached in later phases.
-    jc.programme = [];
-    jc.partsCost = 0;
-    jc.totalCost = (jc.labourCost || 0) + 0;
+    // Daily programme entries (child rows). labourCost is kept fresh on write.
+    try {
+        jc.programme = db.all('SELECT * FROM daily_programme WHERE jobCardId=? ORDER BY entryDateISO DESC, id DESC', [id]);
+    } catch (_) { jc.programme = []; }
+    jc.partsCost = 0; // populated in Phase 4 (linked MRN/GRN receipts)
+    jc.totalCost = (jc.labourCost || 0) + (jc.partsCost || 0);
     return jc;
 }
 

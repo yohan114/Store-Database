@@ -383,7 +383,15 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     let { body: j2 } = await j(await fetch(BASE + '/api/jobcards/' + alJob2.jobcard.id));
     ok((j2.linkedItems || []).some((x) => x.mrnNum === 'AL-OUT'), 'AL-OUT now linked to the covering job');
 
+    // issued item auto-links to a job + shows on the job card
+    let { body: issIn } = await j(await fetch(BASE + '/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemName: 'Cable Tie', qty: 5, vehicleMachinery: 'ALV-1', issueDate: '2026-04-12' }) }));
+    ok(issIn.jobNo === alJobNo, 'POST /api/issues auto-links an in-window issued item', 'jobNo=' + issIn.jobNo);
+    const issInId = issIn.id;
+    let { body: alD3 } = await j(await fetch(BASE + '/api/jobcards/' + alJobId));
+    ok((alD3.linkedIssues || []).some((x) => x.id === issInId) && alD3.issuesCount >= 1, 'job linkedIssues includes the issued item');
+
     // cleanup
+    await j(await fetch(BASE + '/api/issues/' + issInId + '?password=E%26CWorkshop', { method: 'DELETE' }));
     await j(await fetch(BASE + '/api/items/' + aiInId + '?password=E%26CWorkshop', { method: 'DELETE' }));
     await j(await fetch(BASE + '/api/items/' + aiOutId + '?password=E%26CWorkshop', { method: 'DELETE' }));
     await j(await fetch(BASE + '/api/jobcards/' + alJobId, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));

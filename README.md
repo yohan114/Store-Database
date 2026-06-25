@@ -37,6 +37,16 @@ idempotent (jobs upsert by job number; a job's daily rows are replaced).
 npm run import:workshop                 # dry run — parse, match, print a summary
 npm run import:workshop -- --commit     # write into inventory.db
 ```
+
+`tools/import_issues.js` loads `data/general_item_issues.xlsx` (general consumables
+issued out) into the `issues` table and auto-links each to a job by vehicle + date.
+Issued items are listed on the job card (qty) but carry no price, so they don't
+change Total Job Cost.
+
+```bash
+npm run import:issues                    # dry run
+npm run import:issues -- --commit        # write into inventory.db
+```
 This repo already ships the imported data in `inventory.db`.
 
 ## What's inside

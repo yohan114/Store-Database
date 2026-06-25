@@ -202,6 +202,11 @@ function get(id) {
     jc.unpricedItems = (jc.linkedItems || []).filter((it) => it.unpriced).length;
     jc.partsCost = round2((jc.linkedItems || []).reduce((sum, it) => sum + (it.lineCost || 0), 0));
     jc.totalCost = round2((jc.labourCost || 0) + jc.partsCost);
+    // Issued items (consumables) linked to this job — informational, no cost.
+    try {
+        jc.linkedIssues = db.all('SELECT id, issueDate, issueDateISO, itemName, qty, category, issuedTo FROM issues WHERE jobCardId=? ORDER BY issueDateISO DESC, id DESC', [id]);
+    } catch (_) { jc.linkedIssues = []; }
+    jc.issuesCount = (jc.linkedIssues || []).length;
     return jc;
 }
 

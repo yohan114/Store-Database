@@ -113,14 +113,19 @@ app.get('/api/jobcards/match', (req, res) => {
 // Bulk: auto-link every still-unlinked MRN to its matching job (vehicle + window).
 app.post('/api/jobcards/auto-link-mrns', auth.requireRole('ADMIN'), (req, res) => {
     const rows = dbApi.all("SELECT id, vehicleMachinery, reqDateISO FROM items WHERE jobCardId IS NULL AND vehicleMachinery != '' AND reqDateISO != ''");
-    let linked = 0;
+    const issues = dbApi.all("SELECT id, vehicleMachinery, issueDateISO FROM issues WHERE jobCardId IS NULL AND vehicleMachinery != '' AND issueDateISO != ''");
+    let linked = 0, issuesLinked = 0;
     dbApi.transaction(() => {
         for (const it of rows) {
             const m = jobcards.findMatch(it.vehicleMachinery, it.reqDateISO);
             if (m) { setItemJob(it.id, m.id); linked++; }
         }
+        for (const is of issues) {
+            const m = jobcards.findMatch(is.vehicleMachinery, is.issueDateISO);
+            if (m) { setIssueJob(is.id, m.id); issuesLinked++; }
+        }
     });
-    res.json({ success: true, scanned: rows.length, linked });
+    res.json({ success: true, scanned: rows.length + issues.length, linked, issuesLinked });
 });
 app.get('/api/jobcards/:id', (req, res) => {
     const jc = jobcards.get(req.params.id);
@@ -145,15 +150,21 @@ app.post('/api/jobcards/:id/auto-link', (req, res) => {
     const job = dbApi.get('SELECT id, vehicleMachinery FROM jobcards WHERE id=?', [req.params.id]);
     if (!job) return res.status(404).json({ error: 'Job card not found.' });
     const vn = jobcards.normVeh(job.vehicleMachinery);
-    const rows = vn ? dbApi.all("SELECT id, vehicleMachinery, reqDateISO FROM items WHERE jobCardId IS NULL AND reqDateISO != '' AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", ['%' + vn + '%']) : [];
-    let linked = 0;
+    const like = '%' + vn + '%';
+    const rows = vn ? dbApi.all("SELECT id, vehicleMachinery, reqDateISO FROM items WHERE jobCardId IS NULL AND reqDateISO != '' AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", [like]) : [];
+    const issues = vn ? dbApi.all("SELECT id, vehicleMachinery, issueDateISO FROM issues WHERE jobCardId IS NULL AND issueDateISO != '' AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", [like]) : [];
+    let linked = 0, issuesLinked = 0;
     dbApi.transaction(() => {
         for (const it of rows) {
             const m = jobcards.findMatch(it.vehicleMachinery, it.reqDateISO);
             if (m && m.id === job.id) { setItemJob(it.id, job.id); linked++; }
         }
+        for (const is of issues) {
+            const m = jobcards.findMatch(is.vehicleMachinery, is.issueDateISO);
+            if (m && m.id === job.id) { setIssueJob(is.id, job.id); issuesLinked++; }
+        }
     });
-    res.json({ success: true, linked });
+    res.json({ success: true, linked, issuesLinked });
 });
 
 // ---- Daily Programme (child of a job card) + mechanic rates ----------------
@@ -219,6 +230,13 @@ function setItemJob(itemId, jobCardId) {
     dbApi.run('UPDATE items SET jobCardId=?, jobNo=? WHERE id=?', [jobCardId, j.jobNo, itemId]);
     return j.jobNo;
 }
+function setIssueJob(issueId, jobCardId) {
+    if (!jobCardId) { dbApi.run('UPDATE issues SET jobCardId=NULL, jobNo=NULL WHERE id=?', [issueId]); return null; }
+    const j = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobCardId]);
+    if (!j) return null;
+    dbApi.run('UPDATE issues SET jobCardId=?, jobNo=? WHERE id=?', [jobCardId, j.jobNo, issueId]);
+    return j.jobNo;
+}
 // Link every item line of an MRN number to a job card.
 app.post('/api/jobcards/:id/link-mrn', (req, res) => {
     const jobCardId = parseInt(req.params.id);
@@ -233,6 +251,11 @@ app.post('/api/jobcards/:id/link-mrn', (req, res) => {
 // Link / unlink a single item line.
 app.post('/api/items/:id/link', (req, res) => {
     const jobNo = setItemJob(parseInt(req.params.id), (req.body || {}).jobCardId || null);
+    res.json({ success: true, jobNo });
+});
+// Link / unlink a single issued item.
+app.post('/api/issues/:id/link', (req, res) => {
+    const jobNo = setIssueJob(parseInt(req.params.id), (req.body || {}).jobCardId || null);
     res.json({ success: true, jobNo });
 });
 
@@ -512,7 +535,14 @@ app.post('/api/issues', (req, res) => {
             [s(b.issueDate), toISO(b.issueDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.qty) || 0, category,
              s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), now, now]
         );
-        res.json({ success: true, id: r.lastInsertRowid, category });
+        // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
+        let issJobNo = null;
+        if (b.jobCardId) issJobNo = setIssueJob(r.lastInsertRowid, b.jobCardId);
+        else {
+            const m = jobcards.findMatch(s(b.vehicleMachinery), toISO(b.issueDate));
+            if (m) issJobNo = setIssueJob(r.lastInsertRowid, m.id);
+        }
+        res.json({ success: true, id: r.lastInsertRowid, category, jobNo: issJobNo });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

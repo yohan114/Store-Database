@@ -7,7 +7,8 @@
     "start": "node server.js",
     "migrate": "node migrate_to_sqlite.js",
     "migrate:force": "node migrate_to_sqlite.js --force",
-    "test:api": "node test_api.js"
+    "test:api": "node test_api.js",
+    "import:workshop": "node tools/import_workshop.js"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",

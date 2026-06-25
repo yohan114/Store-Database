@@ -26,6 +26,19 @@ On Windows you can double-click **`start_server.bat`** (runs all three steps).
 - `npm run test:api` runs the self-contained API test suite (boots on a spare
   port, logs in, exercises every endpoint, prints a report).
 
+### Importing historical workshop data
+`tools/import_workshop.js` loads `data/Job_Record.xlsx` (Requested job + C-job →
+job cards) and `data/Daily_Work_Done.xlsx` (daily log → daily programme, plus
+the `Labor Hour` rate sheet → mechanics). Daily lines are matched to a job by
+vehicle + date window; unmatched lines go to a per-vehicle catch-all job. It's
+idempotent (jobs upsert by job number; a job's daily rows are replaced).
+
+```bash
+npm run import:workshop                 # dry run — parse, match, print a summary
+npm run import:workshop -- --commit     # write into inventory.db
+```
+This repo already ships the imported data in `inventory.db`.
+
 ## What's inside
 
 ### Workshop

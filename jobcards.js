@@ -29,6 +29,56 @@ const s = (v) => (v === null || v === undefined) ? '' : String(v).trim();
 const numOrNull = (v) => (v === null || v === undefined || v === '' || isNaN(Number(v))) ? null : Number(v);
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
+// --- vehicle + date matching (shared rule with tools/import_workshop.js) -----
+const WINDOW_DAYS = 2;
+const normVeh = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
+function vehSet(v) {
+    const parts = String(v || '').split(/[\/,]/).map(normVeh).filter(Boolean);
+    return parts.length ? parts : [normVeh(v)].filter(Boolean);
+}
+function addDaysISO(isoDate, n) {
+    const d = new Date(String(isoDate) + 'T00:00:00Z');
+    if (isNaN(d)) return isoDate;
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+}
+
+/** Best job matching a vehicle whose [start-2 … end+2] window contains dateISO. */
+function findMatch(vehicle, dateISO) {
+    const vn = normVeh(vehicle);
+    if (!vn || !dateISO) return null;
+    const lo = addDaysISO(dateISO, -WINDOW_DAYS);   // job end   must be >= D-2
+    const hi = addDaysISO(dateISO, WINDOW_DAYS);    // job start must be <= D+2
+    const cands = db.all(
+        `SELECT id, jobNo, dateISO, expectedDateISO, vehicleMachinery FROM jobcards
+         WHERE dateISO IS NOT NULL AND dateISO != ''
+           AND dateISO <= ?
+           AND COALESCE(NULLIF(expectedDateISO,''), dateISO) >= ?
+           AND REPLACE(UPPER(vehicleMachinery), ' ', '') LIKE ?`,
+        [hi, lo, '%' + vn + '%']
+    ).filter((j) => vehSet(j.vehicleMachinery).includes(vn));
+    if (!cands.length) return null;
+    const span = (j) => Date.parse(j.expectedDateISO || j.dateISO) - Date.parse(j.dateISO);
+    cands.sort((a, b) => (span(a) - span(b)) || (Math.abs(Date.parse(a.dateISO) - Date.parse(dateISO)) - Math.abs(Date.parse(b.dateISO) - Date.parse(dateISO))));
+    return cands[0];
+}
+
+/** Get (or create) the per-vehicle catch-all job that holds unscheduled work. */
+function getOrCreateCatchAll(vehicle) {
+    const vn = normVeh(vehicle);
+    if (!vn) return null;
+    const jobNo = 'DW-' + vn;
+    const ex = db.get('SELECT id FROM jobcards WHERE jobNo=?', [jobNo]);
+    if (ex) return ex.id;
+    const now = new Date().toISOString();
+    const label = String(vehicle).trim();
+    return db.run(
+        `INSERT INTO jobcards (jobNo, type, status, vehicleMachinery, details, labourCost, createdAt, updatedAt)
+         VALUES (?,?,?,?,?,?,?,?)`,
+        [jobNo, 'INTERNAL', 'COMPLETED', label, 'Auto-created to hold unscheduled work for ' + label, 0, now, now]
+    ).lastInsertRowid;
+}
+
 function genJobNo() {
     const year = new Date().getFullYear();
     const prefix = `JC-${year}-`;
@@ -143,6 +193,13 @@ function get(id) {
                     (SELECT COUNT(*) FROM receipts r WHERE r.itemId=i.id AND r.transactionType='Receive' AND (r.unitPrice IS NULL OR r.unitPrice=0)) AS unpricedCount
              FROM items i WHERE i.jobCardId=? ORDER BY i.id DESC`, [id]);
     } catch (_) { jc.linkedItems = []; }
+    // Highlight flags: not fully received, or received-but-unpriced / no value yet.
+    (jc.linkedItems || []).forEach((it) => {
+        it.notReceived = (Number(it.recQty) || 0) < (Number(it.reqQty) || 0);
+        it.unpriced = (Number(it.unpricedCount) || 0) > 0 || ((Number(it.recQty) || 0) > 0 && (Number(it.lineCost) || 0) <= 0) || (Number(it.recQty) || 0) === 0;
+    });
+    jc.pendingCount = (jc.linkedItems || []).filter((it) => it.notReceived).length;
+    jc.unpricedItems = (jc.linkedItems || []).filter((it) => it.unpriced).length;
     jc.partsCost = round2((jc.linkedItems || []).reduce((sum, it) => sum + (it.lineCost || 0), 0));
     jc.totalCost = round2((jc.labourCost || 0) + jc.partsCost);
     return jc;
@@ -194,4 +251,4 @@ function remove(id) {
     return { success: true };
 }
 
-module.exports = { STATUSES, TRANSITIONS, create, update, setStatus, get, list, remove, genJobNo };
+module.exports = { STATUSES, TRANSITIONS, create, update, setStatus, get, list, remove, genJobNo, findMatch, getOrCreateCatchAll, normVeh, vehSet };

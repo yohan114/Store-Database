@@ -106,6 +106,22 @@ app.post('/api/jobcards', (req, res) => {
     const jc = jobcards.create(req.body || {}, req.user);
     res.json({ success: true, jobcard: jc });
 });
+// Suggest the job a vehicle + date would auto-link to (live form helper).
+app.get('/api/jobcards/match', (req, res) => {
+    res.json({ match: jobcards.findMatch(req.query.vehicle, req.query.dateISO) || null });
+});
+// Bulk: auto-link every still-unlinked MRN to its matching job (vehicle + window).
+app.post('/api/jobcards/auto-link-mrns', auth.requireRole('ADMIN'), (req, res) => {
+    const rows = dbApi.all("SELECT id, vehicleMachinery, reqDateISO FROM items WHERE jobCardId IS NULL AND vehicleMachinery != '' AND reqDateISO != ''");
+    let linked = 0;
+    dbApi.transaction(() => {
+        for (const it of rows) {
+            const m = jobcards.findMatch(it.vehicleMachinery, it.reqDateISO);
+            if (m) { setItemJob(it.id, m.id); linked++; }
+        }
+    });
+    res.json({ success: true, scanned: rows.length, linked });
+});
 app.get('/api/jobcards/:id', (req, res) => {
     const jc = jobcards.get(req.params.id);
     if (!jc) return res.status(404).json({ error: 'Job card not found.' });
@@ -124,6 +140,21 @@ app.post('/api/jobcards/:id/status', (req, res) => {
 app.delete('/api/jobcards/:id', auth.requireRole('ADMIN'), (req, res) => {
     res.json(jobcards.remove(req.params.id));
 });
+// Pull in unlinked MRNs whose best match is THIS job (vehicle + window).
+app.post('/api/jobcards/:id/auto-link', (req, res) => {
+    const job = dbApi.get('SELECT id, vehicleMachinery FROM jobcards WHERE id=?', [req.params.id]);
+    if (!job) return res.status(404).json({ error: 'Job card not found.' });
+    const vn = jobcards.normVeh(job.vehicleMachinery);
+    const rows = vn ? dbApi.all("SELECT id, vehicleMachinery, reqDateISO FROM items WHERE jobCardId IS NULL AND reqDateISO != '' AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", ['%' + vn + '%']) : [];
+    let linked = 0;
+    dbApi.transaction(() => {
+        for (const it of rows) {
+            const m = jobcards.findMatch(it.vehicleMachinery, it.reqDateISO);
+            if (m && m.id === job.id) { setItemJob(it.id, job.id); linked++; }
+        }
+    });
+    res.json({ success: true, linked });
+});
 
 // ---- Daily Programme (child of a job card) + mechanic rates ----------------
 app.get('/api/jobcards/:id/programme', (req, res) => {
@@ -141,6 +172,24 @@ app.put('/api/programme/:id', (req, res) => {
 });
 app.delete('/api/programme/:id', (req, res) => {
     res.json(programme.remove(req.params.id));
+});
+// Add a daily entry by vehicle + date — auto-resolve the job (else per-vehicle catch-all).
+app.post('/api/programme/auto', (req, res) => {
+    const b = req.body || {};
+    const vehicle = b.vehicle || b.vehicleMachinery;
+    const dateISO = dbApi.toISO(b.entryDate) || new Date().toISOString().slice(0, 10);
+    let jobId = b.jobCardId ? parseInt(b.jobCardId) : null;
+    let matched = !!jobId;
+    if (!jobId) {
+        const m = jobcards.findMatch(vehicle, dateISO);
+        if (m) { jobId = m.id; matched = true; }
+        else jobId = jobcards.getOrCreateCatchAll(vehicle);
+    }
+    if (!jobId) return res.status(400).json({ error: 'A vehicle (or job) is required.' });
+    const r = programme.create(jobId, Object.assign({}, b, { vehicleMachinery: vehicle }), req.user);
+    if (r.error) return res.status(400).json({ error: r.error });
+    const job = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobId]);
+    res.json({ success: true, entry: r.entry, jobCardId: jobId, jobNo: job ? job.jobNo : null, matched });
 });
 // "Today" view across all jobs.
 app.get('/api/programme', (req, res) => {
@@ -302,8 +351,14 @@ app.post('/api/items', (req, res) => {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [s(b.mrnNum), s(b.reqDate), toISO(b.reqDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.reqQty) || 0, category, now, now]
         );
-        if (b.jobCardId) setItemJob(r.lastInsertRowid, b.jobCardId);
-        res.json({ success: true, id: r.lastInsertRowid, category });
+        // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
+        let linkedJobNo = null;
+        if (b.jobCardId) linkedJobNo = setItemJob(r.lastInsertRowid, b.jobCardId);
+        else {
+            const m = jobcards.findMatch(s(b.vehicleMachinery), toISO(b.reqDate));
+            if (m) linkedJobNo = setItemJob(r.lastInsertRowid, m.id);
+        }
+        res.json({ success: true, id: r.lastInsertRowid, category, jobNo: linkedJobNo });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

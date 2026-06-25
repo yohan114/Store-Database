@@ -348,6 +348,50 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     let { status: goneSt } = await j(await fetch(BASE + '/api/jobcards/' + jcId));
     ok(goneSt === 404, 'job card cleanup verified');
 
+    // === AUTO-LINK (vehicle + date window) + JOB COST COCKPIT TESTS ===
+    console.log('\n--- Running Auto-link / Job Cost Cockpit Tests ---');
+    let { body: alJob } = await j(await fetch(BASE + '/api/jobcards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'INTERNAL', vehicleMachinery: 'ALV-1', date: '2026-04-10', expectedDate: '2026-04-14', details: 'autolink test' }) }));
+    const alJobId = alJob.jobcard.id, alJobNo = alJob.jobcard.jobNo;
+
+    let { body: mIn } = await j(await fetch(BASE + '/api/jobcards/match?vehicle=ALV-1&dateISO=2026-04-12'));
+    ok(mIn.match && mIn.match.id === alJobId, 'GET /api/jobcards/match finds job in [start-2 … end+2]');
+    let { body: mOut } = await j(await fetch(BASE + '/api/jobcards/match?vehicle=ALV-1&dateISO=2026-04-30'));
+    ok(mOut.match === null, 'match returns null outside the window');
+
+    let { body: aiIn } = await j(await fetch(BASE + '/api/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mrnNum: 'AL-IN', itemName: 'Belt', vehicleMachinery: 'ALV-1', reqDate: '2026-04-12', reqQty: 2 }) }));
+    ok(aiIn.jobNo === alJobNo, 'POST /api/items auto-links an in-window MRN', 'jobNo=' + aiIn.jobNo);
+    const aiInId = aiIn.id;
+    let { body: aiOut } = await j(await fetch(BASE + '/api/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mrnNum: 'AL-OUT', itemName: 'Hose', vehicleMachinery: 'ALV-1', reqDate: '2026-04-30', reqQty: 1 }) }));
+    ok(!aiOut.jobNo, 'an out-of-window MRN is not auto-linked');
+    const aiOutId = aiOut.id;
+
+    let { body: alDetail } = await j(await fetch(BASE + '/api/jobcards/' + alJobId));
+    const li = (alDetail.linkedItems || []).find((x) => x.mrnNum === 'AL-IN');
+    ok(li && li.notReceived && li.unpriced && alDetail.pendingCount >= 1, 'linked item flagged not-received + no-price (highlight)');
+    await j(await fetch(BASE + '/api/items/' + aiInId + '/receipts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qty: 2, transactionType: 'Receive', unitPrice: 300, deliveryDate: '2026-04-12' }) }));
+    ({ body: alDetail } = await j(await fetch(BASE + '/api/jobcards/' + alJobId)));
+    ok(alDetail.partsCost === 600, 'parts cost updates after pricing (2 × 300 = 600)', 'parts=' + alDetail.partsCost);
+
+    let { body: paIn } = await j(await fetch(BASE + '/api/programme/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vehicle: 'ALV-1', entryDate: '2026-04-11', mechanics: 'Saman', hours: 8 }) }));
+    ok(paIn.matched && paIn.jobNo === alJobNo && paIn.entry.labourCost === 3400, 'POST /api/programme/auto matches job + costs labour (8h Saman = 3400)');
+    let { body: paOut } = await j(await fetch(BASE + '/api/programme/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vehicle: 'ZZAUTO-X', entryDate: '2026-04-11', mechanics: 'Saman', hours: 2 }) }));
+    ok(!paOut.matched && /^DW-/.test(paOut.jobNo || ''), 'programme/auto falls back to a per-vehicle catch-all', paOut.jobNo);
+
+    let { body: alJob2 } = await j(await fetch(BASE + '/api/jobcards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'INTERNAL', vehicleMachinery: 'ALV-1', date: '2026-04-29', expectedDate: '2026-05-01', details: 'covers AL-OUT' }) }));
+    let { body: pjLink } = await j(await fetch(BASE + '/api/jobcards/' + alJob2.jobcard.id + '/auto-link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }));
+    ok(pjLink.success && pjLink.linked >= 1, 'per-job auto-link pulls in the matching unlinked MRN', 'linked=' + pjLink.linked);
+    let { body: j2 } = await j(await fetch(BASE + '/api/jobcards/' + alJob2.jobcard.id));
+    ok((j2.linkedItems || []).some((x) => x.mrnNum === 'AL-OUT'), 'AL-OUT now linked to the covering job');
+
+    // cleanup
+    await j(await fetch(BASE + '/api/items/' + aiInId + '?password=E%26CWorkshop', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/items/' + aiOutId + '?password=E%26CWorkshop', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/jobcards/' + alJobId, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    await j(await fetch(BASE + '/api/jobcards/' + alJob2.jobcard.id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    let { body: dwList } = await j(await fetch(BASE + '/api/jobcards?search=DW-ZZAUTO-X&limit=1'));
+    if (dwList.jobcards && dwList.jobcards[0]) await j(await fetch(BASE + '/api/jobcards/' + dwList.jobcards[0].id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    ok(true, 'auto-link test cleanup done');
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('TEST ERROR:', e); process.exit(1); });

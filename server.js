@@ -145,24 +145,20 @@ app.post('/api/jobcards/:id/status', (req, res) => {
 app.delete('/api/jobcards/:id', auth.requireRole('ADMIN'), (req, res) => {
     res.json(jobcards.remove(req.params.id));
 });
-// Pull in unlinked MRNs whose best match is THIS job (vehicle + window).
+// Pull in EVERY unlinked MRN + issue for this job's vehicle dated within its
+// window [start-2 … end+2] (not just best-match). Only claims unlinked rows.
 app.post('/api/jobcards/:id/auto-link', (req, res) => {
-    const job = dbApi.get('SELECT id, vehicleMachinery FROM jobcards WHERE id=?', [req.params.id]);
+    const job = dbApi.get('SELECT id, vehicleMachinery, dateISO, expectedDateISO FROM jobcards WHERE id=?', [req.params.id]);
     if (!job) return res.status(404).json({ error: 'Job card not found.' });
-    const vn = jobcards.normVeh(job.vehicleMachinery);
-    const like = '%' + vn + '%';
-    const rows = vn ? dbApi.all("SELECT id, vehicleMachinery, reqDateISO FROM items WHERE jobCardId IS NULL AND reqDateISO != '' AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", [like]) : [];
-    const issues = vn ? dbApi.all("SELECT id, vehicleMachinery, issueDateISO FROM issues WHERE jobCardId IS NULL AND issueDateISO != '' AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", [like]) : [];
+    const w = jobcards.jobWindow(job);
+    if (!w || !w.vn) return res.json({ success: true, linked: 0, issuesLinked: 0 });
+    const like = '%' + w.vn + '%';
+    const rows = dbApi.all("SELECT id, vehicleMachinery FROM items WHERE jobCardId IS NULL AND reqDateISO != '' AND reqDateISO >= ? AND reqDateISO <= ? AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", [w.lo, w.hi, like]).filter((r) => jobcards.vehSet(r.vehicleMachinery).includes(w.vn));
+    const issues = dbApi.all("SELECT id, vehicleMachinery FROM issues WHERE jobCardId IS NULL AND issueDateISO != '' AND issueDateISO >= ? AND issueDateISO <= ? AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", [w.lo, w.hi, like]).filter((r) => jobcards.vehSet(r.vehicleMachinery).includes(w.vn));
     let linked = 0, issuesLinked = 0;
     dbApi.transaction(() => {
-        for (const it of rows) {
-            const m = jobcards.findMatch(it.vehicleMachinery, it.reqDateISO);
-            if (m && m.id === job.id) { setItemJob(it.id, job.id); linked++; }
-        }
-        for (const is of issues) {
-            const m = jobcards.findMatch(is.vehicleMachinery, is.issueDateISO);
-            if (m && m.id === job.id) { setIssueJob(is.id, job.id); issuesLinked++; }
-        }
+        for (const it of rows) { setItemJob(it.id, job.id); linked++; }
+        for (const is of issues) { setIssueJob(is.id, job.id); issuesLinked++; }
     });
     res.json({ success: true, linked, issuesLinked });
 });

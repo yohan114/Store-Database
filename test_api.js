@@ -321,16 +321,16 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ok(badSt === 400, 'illegal status transition rejected (400)');
 
     let { body: dpRes } = await j(await fetch(BASE + `/api/jobcards/${jcId}/programme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entryDate: '2026-06-10', mechanics: 'Saman, Vinod', hours: 8, workDescription: 'Test work' }) }));
-    ok(dpRes.success && dpRes.entry.labourCost === 3200, 'POST programme computes labour (8h: Saman+Vinod = 3200)', 'labour=' + (dpRes.entry && dpRes.entry.labourCost));
+    ok(dpRes.success && dpRes.entry.labourCost === 6400, 'POST programme computes labour (8h each: Saman 8×425 + Vinod 8×375 = 6400)', 'labour=' + (dpRes.entry && dpRes.entry.labourCost));
     const dpId = dpRes.entry.id;
 
     let { body: jcGet } = await j(await fetch(BASE + '/api/jobcards/' + jcId));
-    ok(jcGet.labourCost === 3200 && jcGet.programme.length === 1, 'job labourCost rolled up from programme');
+    ok(jcGet.labourCost === 6400 && jcGet.programme.length === 1, 'job labourCost rolled up from programme');
 
     let { body: mItem } = await j(await fetch(BASE + '/api/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mrnNum: 'JCLINK-1', itemName: 'Test part', vehicleMachinery: 'TEST-VH', reqQty: 1, jobCardId: jcId }) }));
     await j(await fetch(BASE + `/api/items/${mItem.id}/receipts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qty: 1, transactionType: 'Receive', unitPrice: 500, deliveryDate: '2026-06-10' }) }));
     ({ body: jcGet } = await j(await fetch(BASE + '/api/jobcards/' + jcId)));
-    ok(jcGet.partsCost === 500 && jcGet.totalCost === 3700, 'parts cost from linked MRN + total job cost (500 + 3200 = 3700)', 'total=' + jcGet.totalCost);
+    ok(jcGet.partsCost === 500 && jcGet.totalCost === 6900, 'parts cost from linked MRN + total job cost (500 + 6400 = 6900)', 'total=' + jcGet.totalCost);
 
     let { body: dash } = await j(await fetch(BASE + '/api/dashboard'));
     ok(typeof dash.spend.mtd === 'number' && typeof dash.spend.ytd === 'number' && !!dash.received && Array.isArray(dash.suppliers) && !!dash.jobs, 'GET /api/dashboard returns spend/received/suppliers/jobs');
@@ -374,6 +374,8 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
 
     let { body: paIn } = await j(await fetch(BASE + '/api/programme/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vehicle: 'ALV-1', entryDate: '2026-04-11', mechanics: 'Saman', hours: 8 }) }));
     ok(paIn.matched && paIn.jobNo === alJobNo && paIn.entry.labourCost === 3400, 'POST /api/programme/auto matches job + costs labour (8h Saman = 3400)');
+    let { body: dual } = await j(await fetch(BASE + '/api/programme/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vehicle: 'ALV-1', entryDate: '2026-04-13', mechanics: 'Krishna, Dinesh', hours: 8 }) }));
+    ok(dual.entry.labourCost === 5400, 'two mechanics costed at FULL hours each (Krishna 8×250 + Dinesh 8×425 = 5400)', 'labour=' + (dual.entry && dual.entry.labourCost));
     let { body: paOut } = await j(await fetch(BASE + '/api/programme/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vehicle: 'ZZAUTO-X', entryDate: '2026-04-11', mechanics: 'Saman', hours: 2 }) }));
     ok(!paOut.matched && /^DW-/.test(paOut.jobNo || ''), 'programme/auto falls back to a per-vehicle catch-all', paOut.jobNo);
 

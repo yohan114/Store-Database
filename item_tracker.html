@@ -7876,7 +7876,7 @@
                     <div class="px-4 py-3 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800 flex flex-wrap gap-2 items-center">
                         <input id="jcLinkMrnInput" placeholder="Link existing MRN number…" class="flex-grow px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
                         <button onclick="linkMrnToJob(${jc.id})" class="px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Link MRN</button>
-                        <button onclick="autoLinkJob(${jc.id})" class="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700" title="Pull in unlinked MRNs matching this vehicle + dates">Auto-link matching</button>
+                        <button onclick="autoLinkJob(${jc.id})" class="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700" title="Pull in all items/issues dated within this job (start −2d … end +2d)">Auto-link matching</button>
                     </div>
                     <div id="jcLinkMrnError" class="hidden px-4 pb-3 text-xs font-semibold text-rose-500"></div>
                 </div>`;
@@ -7946,6 +7946,9 @@
                             <button onclick="addJobIssue(${jc.id})" class="col-span-6 sm:col-span-2 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Issue</button>
                         </div>
                         <div id="jisError" class="hidden mt-2 text-xs font-semibold text-rose-500"></div>
+                    </div>
+                    <div class="px-4 py-2.5 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800 flex justify-end">
+                        <button onclick="autoLinkJob(${jc.id})" class="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700" title="Pull in all items/issues dated within this job (start −2d … end +2d)">Auto-link matching</button>
                     </div>
                 </div>`;
         }

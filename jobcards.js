@@ -256,4 +256,15 @@ function remove(id) {
     return { success: true };
 }
 
-module.exports = { STATUSES, TRANSITIONS, create, update, setStatus, get, list, remove, genJobNo, findMatch, getOrCreateCatchAll, normVeh, vehSet };
+/** Claim window for a job: [start-2 … (end||start)+2] + normalized vehicle.
+ *  Null for jobs without a start date (e.g. DW- catch-all jobs). */
+function jobWindow(job) {
+    if (!job || !job.dateISO) return null;
+    return {
+        lo: addDaysISO(job.dateISO, -WINDOW_DAYS),
+        hi: addDaysISO(job.expectedDateISO || job.dateISO, WINDOW_DAYS),
+        vn: normVeh(job.vehicleMachinery),
+    };
+}
+
+module.exports = { STATUSES, TRANSITIONS, create, update, setStatus, get, list, remove, genJobNo, findMatch, getOrCreateCatchAll, jobWindow, normVeh, vehSet };

@@ -69,17 +69,18 @@ function rateFor(name, map) {
     return map.has(n) ? map.get(n) : null;
 }
 
-/** Labour cost for one daily line: hours split equally across mechanics * rate. */
+/** Labour cost for one daily line: each named mechanic is costed at the FULL
+ *  hours × their rate (two mechanics for 8h = both × 8h), summed. Unrated
+ *  names (foreman/external) contribute Rs.0. */
 function computeLabour(mechanicsStr, hours, map) {
     const mechs = splitMechanics(mechanicsStr);
     const h = Number(hours) || 0;
     if (!mechs.length || h <= 0) return 0;
     const rm = map || rateMap();
-    const share = h / mechs.length;
     let total = 0;
     for (const m of mechs) {
         const r = rateFor(m, rm);
-        if (r) total += share * r;
+        if (r) total += h * r;
     }
     return round2(total);
 }

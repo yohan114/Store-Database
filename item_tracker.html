@@ -572,6 +572,7 @@
                 </div>
             </div>
             <datalist id="mechanicDatalist"></datalist>
+            <datalist id="jobItemOptions"></datalist>
 
             <section id="view-dashboard" class="route-view hidden space-y-6">
                 <!-- ===== Unified Command Centre (server-side analytics, filterable) ===== -->
@@ -7626,6 +7627,7 @@
             if (!mount) return;
             const entries = jc.programme || [];
             window.__jcProgramme = {}; entries.forEach((e) => { window.__jcProgramme[e.id] = e; });
+            const mechOpts = (window.__mechanics || []).map((n) => `<option value="${jcEsc(n)}">${jcEsc(n)}</option>`).join('');
             const rows = entries.map((e) => `
                 <div class="flex items-start justify-between gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
                     <div class="min-w-0">
@@ -7650,13 +7652,28 @@
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             <input id="jdpDate" type="date" value="${dpTodayISO()}" class="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
                             <input id="jdpHours" type="number" step="any" min="0" placeholder="Hours" class="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
-                            <input id="jdpMechanics" list="mechanicDatalist" placeholder="Mechanics" class="col-span-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jdpMechanics" list="mechanicDatalist" placeholder="Mechanics" class="col-span-2 sm:col-span-1 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <select id="jdpMechPick" onchange="jdpAddMech(this)" class="col-span-2 sm:col-span-1 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-500 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                                <option value="">+ Add mechanic ▾</option>
+                                ${mechOpts}
+                            </select>
                             <input id="jdpWork" placeholder="Work done" class="col-span-2 sm:col-span-3 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
                             <button onclick="saveJobDaily(${jc.id})" class="px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Add</button>
                         </div>
                         <div id="jdpError" class="hidden mt-2 text-xs font-semibold text-rose-500"></div>
                     </div>
                 </div>`;
+        }
+        // Pick a mechanic from the ▾ list → append to the comma-separated Mechanics field.
+        function jdpAddMech(sel) {
+            const name = (sel.value || '').trim(); if (!name) return;
+            const inp = document.getElementById('jdpMechanics');
+            if (inp) {
+                const cur = inp.value.split(',').map((x) => x.trim()).filter(Boolean);
+                if (!cur.some((x) => x.toLowerCase() === name.toLowerCase())) cur.push(name);
+                inp.value = cur.join(', ');
+            }
+            sel.value = '';
         }
         function editJobDaily(id) {
             const e = (window.__jcProgramme || {})[id]; if (!e) return;
@@ -7793,8 +7810,17 @@
         // ---- Mechanics & rates ----
         async function loadMechanicDatalist() {
             let data; try { data = await (await fetch('/api/mechanics')).json(); } catch (e) { return; }
+            const active = (data.mechanics || []).filter((m) => m.active);
+            window.__mechanics = active.map((m) => m.name);          // cached for the daily-programme pick-select
             const dl = document.getElementById('mechanicDatalist');
-            if (dl) dl.innerHTML = (data.mechanics || []).filter((m) => m.active).map((m) => `<option value="${jcEsc(m.name)}">`).join('');
+            if (dl) dl.innerHTML = active.map((m) => `<option value="${jcEsc(m.name)}">`).join('');
+        }
+        // All distinct item/consumable names — fills the searchable datalist used by
+        // the job modal's Item/part and Consumable name fields.
+        async function loadItemNameDatalist() {
+            let data; try { data = await (await fetch('/api/item-names')).json(); } catch (e) { return; }
+            const dl = document.getElementById('jobItemOptions');
+            if (dl) dl.innerHTML = (data.names || []).map((n) => `<option value="${jcEsc(n)}">`).join('');
         }
         function openMechanicsModal() { const m = document.getElementById('mechanicsModal'); if (m) m.classList.remove('hidden'); renderMechanicsList(); }
         function closeMechanicsModal() { const m = document.getElementById('mechanicsModal'); if (m) m.classList.add('hidden'); }
@@ -7823,9 +7849,10 @@
             } catch (e) {}
         }
 
-        // Populate mechanic datalist once the page is ready.
-        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadMechanicDatalist);
-        else loadMechanicDatalist();
+        // Populate mechanic + item-name datalists once the page is ready.
+        function loadJobModalLookups() { loadMechanicDatalist(); loadItemNameDatalist(); }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadJobModalLookups);
+        else loadJobModalLookups();
     </script>
 
     <!-- Job <-> MRN/GRN linkage module (Phase 4) -->
@@ -7866,7 +7893,7 @@
                     <div class="px-4 py-3 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800">
                         <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Add item</div>
                         <div class="grid grid-cols-12 gap-2">
-                            <input id="jiName" placeholder="Item / part name" class="col-span-12 sm:col-span-5 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jiName" list="jobItemOptions" placeholder="Item / part name" class="col-span-12 sm:col-span-5 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
                             <input id="jiQty" type="number" step="any" min="0" value="1" placeholder="Qty" class="col-span-4 sm:col-span-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
                             <input id="jiPrice" type="number" step="any" min="0" placeholder="Unit Rs. (optional)" class="col-span-5 sm:col-span-3 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
                             <button onclick="addJobItem(${jc.id})" class="col-span-3 sm:col-span-2 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Add</button>
@@ -7874,12 +7901,23 @@
                         <div id="jiError" class="hidden mt-2 text-xs font-semibold text-rose-500"></div>
                     </div>
                     <div class="px-4 py-3 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800 flex flex-wrap gap-2 items-center">
-                        <input id="jcLinkMrnInput" placeholder="Link existing MRN number…" class="flex-grow px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <select id="jcLinkMrnInput" class="flex-grow px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <option value="">— Select an MRN to link —</option>
+                        </select>
                         <button onclick="linkMrnToJob(${jc.id})" class="px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Link MRN</button>
                         <button onclick="autoLinkJob(${jc.id})" class="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700" title="Pull in all items/issues dated within this job (start −2d … end +2d)">Auto-link matching</button>
                     </div>
                     <div id="jcLinkMrnError" class="hidden px-4 pb-3 text-xs font-semibold text-rose-500"></div>
                 </div>`;
+            loadLinkableMrns(jc.id);
+        }
+        // Fill the "Link MRN" select with this job's vehicle's unlinked MRNs.
+        async function loadLinkableMrns(jobCardId) {
+            const sel = document.getElementById('jcLinkMrnInput');
+            if (!sel) return;
+            let data; try { data = await (await fetch('/api/jobcards/' + jobCardId + '/linkable-mrns')).json(); } catch (e) { return; }
+            const opts = (data.mrns || []).map((m) => `<option value="${jcEsc(m.mrnNum)}">${jcEsc(m.mrnNum)}${m.itemName ? ' · ' + jcEsc(m.itemName) : ''}</option>`).join('');
+            sel.innerHTML = `<option value="">${(data.mrns || []).length ? '— Select an MRN to link —' : '— No unlinked MRNs for this vehicle —'}</option>` + opts;
         }
         async function addJobItem(jobCardId) {
             const name = ((document.getElementById('jiName') || {}).value || '').trim();
@@ -7941,7 +7979,7 @@
                     <div class="px-4 py-2">${rows || '<div class="py-3 text-xs text-slate-400 italic">No issued items linked yet.</div>'}</div>
                     <div class="px-4 py-3 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800">
                         <div class="grid grid-cols-12 gap-2">
-                            <input id="jisName" placeholder="Issue a consumable to this job…" class="col-span-12 sm:col-span-7 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jisName" list="jobItemOptions" placeholder="Issue a consumable to this job…" class="col-span-12 sm:col-span-7 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
                             <input id="jisQty" type="number" step="any" min="0" value="1" placeholder="Qty" class="col-span-6 sm:col-span-3 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
                             <button onclick="addJobIssue(${jc.id})" class="col-span-6 sm:col-span-2 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Issue</button>
                         </div>

@@ -162,6 +162,29 @@ app.post('/api/jobcards/:id/auto-link', (req, res) => {
     });
     res.json({ success: true, linked, issuesLinked });
 });
+// Distinct unlinked MRNs whose vehicle matches this job — feeds the "Link MRN"
+// dropdown in the job modal. Vehicle match is the shared normVeh/vehSet rule
+// (any plate the job shares with the MRN), one row per mrnNum.
+app.get('/api/jobcards/:id/linkable-mrns', (req, res) => {
+    const job = dbApi.get('SELECT vehicleMachinery FROM jobcards WHERE id=?', [req.params.id]);
+    if (!job) return res.status(404).json({ error: 'Job card not found.' });
+    const jobVehs = jobcards.vehSet(job.vehicleMachinery);
+    if (!jobVehs.length) return res.json({ mrns: [] });
+    const likes = jobVehs.map(() => "REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?").join(' OR ');
+    const params = jobVehs.map((v) => '%' + v + '%');
+    const rows = dbApi.all(
+        "SELECT mrnNum, itemName, vehicleMachinery FROM items WHERE jobCardId IS NULL AND TRIM(COALESCE(mrnNum,'')) != '' AND (" + likes + ") ORDER BY mrnNum",
+        params
+    );
+    const seen = new Set(); const mrns = [];
+    for (const r of rows) {
+        if (seen.has(r.mrnNum)) continue;
+        if (!jobcards.vehSet(r.vehicleMachinery).some((v) => jobVehs.includes(v))) continue;
+        seen.add(r.mrnNum);
+        mrns.push({ mrnNum: r.mrnNum, itemName: r.itemName || '' });
+    }
+    res.json({ mrns });
+});
 
 // ---- Daily Programme (child of a job card) + mechanic rates ----------------
 app.get('/api/jobcards/:id/programme', (req, res) => {
@@ -586,6 +609,21 @@ app.get('/api/vehicles', (req, res) => {
             SELECT DISTINCT TRIM(toLocation) AS v FROM material_transfers WHERE TRIM(COALESCE(toLocation,'')) != ''
             ORDER BY v COLLATE NOCASE`);
         res.json(rows.map(r => r.v));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Distinct item/consumable names across MRNs + issues — feeds the searchable
+// datalists in the job-card modal (item/part name, consumable name).
+app.get('/api/item-names', (req, res) => {
+    try {
+        const rows = dbApi.all(`
+            SELECT DISTINCT TRIM(itemName) AS n FROM items WHERE TRIM(COALESCE(itemName,'')) != ''
+            UNION
+            SELECT DISTINCT TRIM(itemName) AS n FROM issues WHERE TRIM(COALESCE(itemName,'')) != ''
+            ORDER BY n COLLATE NOCASE`);
+        res.json({ names: rows.map(r => r.n) });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

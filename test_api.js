@@ -365,6 +365,12 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ok(!aiOut.jobNo, 'an out-of-window MRN is not auto-linked');
     const aiOutId = aiOut.id;
 
+    // Addendum 6 — dropdown feeds: item-name datalist + linkable-MRN select
+    let { body: names } = await j(await fetch(BASE + '/api/item-names'));
+    ok(Array.isArray(names.names) && names.names.length > 100 && names.names.includes('Belt'), 'GET /api/item-names returns distinct item names', 'count=' + (names.names || []).length);
+    let { body: linkable } = await j(await fetch(BASE + '/api/jobcards/' + alJobId + '/linkable-mrns'));
+    ok(Array.isArray(linkable.mrns) && linkable.mrns.some((m) => m.mrnNum === 'AL-OUT') && !linkable.mrns.some((m) => m.mrnNum === 'AL-IN'), 'GET /api/jobcards/:id/linkable-mrns lists unlinked same-vehicle MRNs only');
+
     let { body: alDetail } = await j(await fetch(BASE + '/api/jobcards/' + alJobId));
     const li = (alDetail.linkedItems || []).find((x) => x.mrnNum === 'AL-IN');
     ok(li && li.notReceived && li.unpriced && alDetail.pendingCount >= 1, 'linked item flagged not-received + no-price (highlight)');

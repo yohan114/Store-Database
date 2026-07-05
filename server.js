@@ -22,9 +22,13 @@ const auth = require('./auth');
 const jobcards = require('./jobcards');
 const programme = require('./programme');
 const dashboard = require('./dashboard');
+const jobrequests = require('./jobrequests');
+const notifications = require('./notifications');
+const users = require('./users');
 
 dbApi.init();
 auth.ensureSeedUser();
+users.ensureSeedApprovers();
 programme.ensureSeedMechanics();
 
 const app = express();
@@ -96,6 +100,9 @@ app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res) => {
 app.get('/js/app.js', auth.requirePageAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'js', 'app.js'));
 });
+app.get('/js/operations.js', auth.requirePageAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'js', 'operations.js'));
+});
 app.get('/js/login.js', (req, res) => {
     res.sendFile(path.join(__dirname, 'js', 'login.js'));
 });
@@ -107,6 +114,73 @@ app.get('/js/login.js', (req, res) => {
 app.get('/api/dashboard', (req, res) => {
     res.json(dashboard.build(req.query));
 });
+
+// ===========================================================================
+// Operations — job requests, notifications, users
+// ===========================================================================
+const svcErr = (res, out) => res.status(out.status || 500).json({ error: out.error });
+
+app.get('/api/job-requests', (req, res) => {
+    try { res.json(jobrequests.list(req.query, req.user)); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/job-requests/meta', (req, res) => {
+    res.json({
+        statuses: jobrequests.STATUSES, statusLabels: jobrequests.STATUS_LABELS,
+        canCreate: jobrequests.canCreate(req.user), roleLabels: auth.ROLE_LABELS,
+        directory: users.directory(),
+        standingCc: (dbApi.get(`SELECT value FROM app_settings WHERE key='standingCc'`) || {}).value || '',
+    });
+});
+app.post('/api/job-requests', (req, res) => {
+    try { const out = jobrequests.create(req.body || {}, req.user); if (out.error) return svcErr(res, out); res.json(out); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/job-requests/:id', (req, res) => {
+    const r = jobrequests.get(parseInt(req.params.id)); if (!r) return res.status(404).json({ error: 'Not found' }); res.json(r);
+});
+app.put('/api/job-requests/:id', (req, res) => {
+    try { const out = jobrequests.update(parseInt(req.params.id), req.body || {}, req.user); if (out.error) return svcErr(res, out); res.json(out); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/job-requests/:id/action', (req, res) => {
+    try { const out = jobrequests.transition(parseInt(req.params.id), (req.body || {}).action, req.body || {}, req.user); if (out.error) return svcErr(res, out); res.json(out); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/job-requests/:id', (req, res) => {
+    try { const out = jobrequests.remove(parseInt(req.params.id), req.user); if (out.error) return svcErr(res, out); res.json(out); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Notifications (current user's)
+app.get('/api/notifications', (req, res) => {
+    res.json({ notifications: notifications.listFor(req.user.id), unread: notifications.unreadCount(req.user.id) });
+});
+app.post('/api/notifications/read-all', (req, res) => { notifications.markAllRead(req.user.id); res.json({ success: true }); });
+app.post('/api/notifications/:id/read', (req, res) => { notifications.markRead(parseInt(req.params.id), req.user.id); res.json({ success: true }); });
+
+// Users admin (ADMIN only)
+app.get('/api/users', auth.requireRole('ADMIN'), (req, res) => res.json({ users: users.list() }));
+app.post('/api/users', auth.requireRole('ADMIN'), (req, res) => {
+    const out = users.create(req.body || {}); if (out.error) return svcErr(res, out); res.json(out);
+});
+app.put('/api/users/:id', auth.requireRole('ADMIN'), (req, res) => {
+    const out = users.update(parseInt(req.params.id), req.body || {}); if (out.error) return svcErr(res, out); res.json(out);
+});
+app.post('/api/users/:id/reset-password', auth.requireRole('ADMIN'), (req, res) => {
+    const out = users.resetPassword(parseInt(req.params.id), req.body || {}); if (out.error) return svcErr(res, out); res.json(out);
+});
+
+// Standing CC list for outsourced e-mails (ADMIN)
+app.get('/api/settings/standing-cc', (req, res) => res.json({ standingCc: (dbApi.get(`SELECT value FROM app_settings WHERE key='standingCc'`) || {}).value || '' }));
+app.post('/api/settings/standing-cc', auth.requireRole('ADMIN'), (req, res) => {
+    const v = String((req.body || {}).standingCc || '').trim();
+    dbApi.run(`INSERT INTO app_settings (key,value) VALUES ('standingCc',?) ON CONFLICT(key) DO UPDATE SET value=?`, [v, v]);
+    res.json({ success: true, standingCc: v });
+});
+
+// Outbox (e-mail log)
+app.get('/api/outbox', (req, res) => res.json({ outbox: dbApi.all('SELECT * FROM outbox ORDER BY id DESC LIMIT 200') }));
 
 // ---- Lightweight change signature for client polling ------------------------
 // The UI polls this tiny endpoint instead of re-downloading the whole dataset;

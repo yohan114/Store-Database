@@ -13,3 +13,4 @@ temp/
 .vscode/
 .gemini/
 *.tmp
+mail.config.json

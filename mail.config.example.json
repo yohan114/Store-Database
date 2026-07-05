@@ -1,0 +1,7 @@
+{
+  "host": "smtp.gmail.com",
+  "port": 465,
+  "user": "your-address@gmail.com",
+  "pass": "your-16-char-app-password",
+  "from": "Edward & Christie Stores <your-address@gmail.com>"
+}

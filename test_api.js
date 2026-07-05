@@ -477,6 +477,69 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     if (dwList.jobcards && dwList.jobcards[0]) await j(await fetch(BASE + '/api/jobcards/' + dwList.jobcards[0].id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
     ok(true, 'auto-link test cleanup done');
 
+    // === OPERATIONS: job-request approval workflow ===
+    console.log('\n--- Running Operations Job-Request Tests ---');
+    // Separate sessions per role (seeded accounts). Uses the raw fetch so each
+    // keeps its own cookie, independent of the admin COOKIE used elsewhere.
+    async function loginAs(u, p) {
+        const r = await _fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: p }) });
+        const sc = r.headers.get('set-cookie'); return sc ? sc.split(';')[0] : '';
+    }
+    const jr = async (cookie, url, opts = {}) => {
+        const headers = Object.assign({ 'Content-Type': 'application/json', Cookie: cookie }, opts.headers || {});
+        const r = await _fetch(BASE + url, Object.assign({}, opts, { headers }));
+        return { status: r.status, body: await r.json().catch(() => null) };
+    };
+    const cTO = await loginAs('transport', 'changeme123');
+    const cTM = await loginAs('tmanager', 'changeme123');
+    const cOM = await loginAs('opsmanager', 'changeme123');
+    ok(!!cTO && !!cTM && !!cOM, 'seeded approver logins (transport / tmanager / opsmanager)');
+
+    // Transport Officer raises + submits
+    let rr = await jr(cTO, '/api/job-requests', { method: 'POST', body: JSON.stringify({ title: 'Test op job', details: 'x', vehicleMachinery: 'OPTEST-1', type: 'INTERNAL', submit: true }) });
+    ok(rr.status === 200 && rr.body.request.reqNo && rr.body.request.status === 'PENDING_TM', 'TO submit → JR number + PENDING_TM', 'reqNo=' + (rr.body.request && rr.body.request.reqNo));
+    const reqId = rr.body.request.id;
+    // Role gate: TO cannot tmApprove
+    let g = await jr(cTO, `/api/job-requests/${reqId}/action`, { method: 'POST', body: JSON.stringify({ action: 'tmApprove' }) });
+    ok(g.status === 403, 'TO cannot approve as Transport Manager (403)');
+    // TM approve → PENDING_OM
+    rr = await jr(cTM, `/api/job-requests/${reqId}/action`, { method: 'POST', body: JSON.stringify({ action: 'tmApprove' }) });
+    ok(rr.body.request.status === 'PENDING_OM', 'TM approve → PENDING_OM');
+    // OM approve → APPROVED + auto workshop job card
+    rr = await jr(cOM, `/api/job-requests/${reqId}/action`, { method: 'POST', body: JSON.stringify({ action: 'omApprove' }) });
+    ok(rr.body.request.status === 'APPROVED' && rr.body.request.jobCardId && rr.body.request.jobCard, 'OM approve → APPROVED + linked job card opened', 'jobCard=' + (rr.body.request.jobCard && rr.body.request.jobCard.jobNo));
+    const spawnedJobCard = rr.body.request.jobCardId;
+    // start + complete
+    await jr(cTO, `/api/job-requests/${reqId}/action`, { method: 'POST', body: JSON.stringify({ action: 'start' }) });
+    rr = await jr(cTO, `/api/job-requests/${reqId}/action`, { method: 'POST', body: JSON.stringify({ action: 'complete' }) });
+    ok(rr.body.request.status === 'COMPLETED', 'complete → COMPLETED');
+    // Completion notifies TO + OM
+    const nTO = await jr(cTO, '/api/notifications');
+    const nOM = await jr(cOM, '/api/notifications');
+    ok(nTO.body.unread >= 1 && nOM.body.unread >= 1 && /completed/i.test((nOM.body.notifications[0] || {}).message || ''), 'completion notifies Transport + Operational Manager');
+
+    // Outsourced request → e-mail logged to outbox on OM approval
+    await jr(cTM || COOKIE, '/api/settings/standing-cc', { method: 'POST', headers: { Cookie: COOKIE }, body: JSON.stringify({ standingCc: 'ops@enc.lk' }) });
+    let orr = await jr(cTO, '/api/job-requests', { method: 'POST', body: JSON.stringify({ title: 'Outside gearbox', type: 'OUTSOURCED', vehicleMachinery: 'OPTEST-2', vendorName: 'ABC', vendorEmail: 'abc@vendor.lk', emailRecipients: ['x@party.lk'], submit: true }) });
+    const oId = orr.body.request.id;
+    await jr(cTM, `/api/job-requests/${oId}/action`, { method: 'POST', body: JSON.stringify({ action: 'tmApprove' }) });
+    orr = await jr(cOM, `/api/job-requests/${oId}/action`, { method: 'POST', body: JSON.stringify({ action: 'omApprove' }) });
+    let { body: ob } = await j(await fetch(BASE + '/api/outbox'));
+    const mail = (ob.outbox || []).find((m) => m.reqNo === orr.body.request.reqNo);
+    ok(!!mail && mail.toAddr === 'abc@vendor.lk' && /ops@enc.lk/.test(mail.cc || ''), 'outsourced approval e-mails vendor + standing CC (outbox)', 'status=' + (mail && mail.status));
+
+    // Users admin (ADMIN only)
+    let { status: uForbidden } = await jr(cTO, '/api/users');
+    ok(uForbidden === 403, 'non-admin cannot list users (403)');
+    let { body: uList } = await j(await fetch(BASE + '/api/users'));
+    ok(Array.isArray(uList.users) && uList.users.some((u) => u.username === 'opsmanager'), 'admin lists users incl. seeded approvers');
+
+    // cleanup the two test requests + spawned job card
+    await jr(COOKIE ? COOKIE : cTO, `/api/job-requests/${reqId}`, { method: 'DELETE', headers: { Cookie: COOKIE } });
+    await jr(COOKIE, `/api/job-requests/${oId}`, { method: 'DELETE', headers: { Cookie: COOKIE } });
+    if (spawnedJobCard) await j(await fetch(BASE + '/api/jobcards/' + spawnedJobCard, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    ok(true, 'operations test cleanup done');
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('TEST ERROR:', e); process.exit(1); });

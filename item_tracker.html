@@ -129,6 +129,12 @@
         .animate-fade-in {
             animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
         }
+        /* Operations form controls */
+        .opl { display:block; font-size:0.7rem; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#64748b; margin-bottom:0.35rem; }
+        .opi { display:block; width:100%; border-radius:0.75rem; border:1px solid #e2e8f0; background:#f8fafc; padding:0.65rem 0.85rem; font-size:0.85rem; font-weight:600; color:#1e293b; outline:none; transition:box-shadow .15s,border-color .15s; }
+        .opi:focus { border-color:#12b389; box-shadow:0 0 0 3px rgba(18,179,137,.18); background:#fff; }
+        .dark .opl { color:#94a3b8; }
+        .dark .opi { background:#0f172a; border-color:#1e293b; color:#e2e8f0; }
     </style>
 </head>
 <body class="text-slate-800 dark:text-slate-100 bg-slate-50 dark:bg-slate-950 font-sans antialiased h-screen flex flex-col overflow-hidden transition-colors duration-300">
@@ -168,6 +174,21 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
                         </svg>
                     </button>
+
+                    <!-- Notifications bell (Operations) -->
+                    <div class="relative" id="notifContainer">
+                        <button onclick="toggleNotifDropdown()" class="relative p-2.5 bg-indigo-900/50 hover:bg-indigo-900/90 dark:bg-slate-800/50 dark:hover:bg-slate-800 rounded-2xl border border-indigo-900/80 dark:border-slate-700/80 transition" title="Notifications">
+                            <svg class="w-5 h-5 text-indigo-200 dark:text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                            <span id="notifBadge" class="hidden absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full bg-rose-500 text-white text-[10px] font-extrabold">0</span>
+                        </button>
+                        <div id="notifDropdown" class="hidden absolute right-0 mt-2 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl z-50 overflow-hidden">
+                            <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                                <span class="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Notifications</span>
+                                <button onclick="markAllNotifsRead()" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">Mark all read</button>
+                            </div>
+                            <div id="notifList" class="max-h-96 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/70"></div>
+                        </div>
+                    </div>
 
                     <!-- Current User + Sign out -->
                     <div class="relative" id="userMenuContainer">
@@ -234,6 +255,13 @@
         <aside class="sidebar-transition w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-850 flex flex-col overflow-y-auto shrink-0 hidden md:flex z-10 shadow-sm relative transition-colors duration-300">
             <!-- Navigation Links -->
             <nav class="p-4 space-y-2 shrink-0" id="sidebarNav">
+                <a href="#operations" id="nav-operations" class="sidebar-btn w-full flex items-center justify-between px-3.5 py-3 text-slate-655 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-semibold rounded-2xl transition-all duration-200 border border-transparent outline-none">
+                    <span class="flex items-center">
+                        <svg class="sidebar-icon w-5 h-5 mr-3 text-slate-400 dark:text-slate-500 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        <span class="sidebar-text">Operations</span>
+                    </span>
+                    <span id="count-ops-pending" class="sidebar-badge hidden bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 py-0.5 px-3 rounded-full text-xs font-extrabold transition-all">0</span>
+                </a>
                 <a href="#dashboard" id="nav-dashboard" class="sidebar-btn w-full flex items-center justify-between px-3.5 py-3 text-slate-655 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-semibold rounded-2xl transition-all duration-200 border border-transparent outline-none">
                     <span class="flex items-center">
                         <svg class="sidebar-icon w-5 h-5 mr-3 text-slate-400 dark:text-slate-500 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4zM14 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2v-4z"></path></svg>
@@ -2073,7 +2101,70 @@
                 </div>
             </section>
 
+            <!-- VIEW: Operations (Job Requests) -->
+            <section id="view-operations" class="route-view hidden space-y-6">
+                <div class="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Operations — Job Requests</h2>
+                        <p class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-1">Raise a job, route it through Transport Manager &amp; Operational Manager approval, and track it to completion.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button id="opsNewBtn" onclick="openJobRequestModal()" class="hidden px-4 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-800 text-white text-sm font-bold shadow-glow">+ Request a Job</button>
+                        <button onclick="loadOperations()" class="px-3 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-bold border border-slate-200 dark:border-slate-700">Refresh</button>
+                    </div>
+                </div>
+
+                <!-- KPI tiles -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <a href="#operations" onclick="opsSetFilter('pending')" class="bg-white dark:bg-slate-900 rounded-2xl border border-rose-100 dark:border-rose-900/40 p-5 shadow-glass-light dark:shadow-glass-dark">
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-rose-500">Pending my approval</p>
+                        <h3 id="opsKpiPending" class="text-2xl font-black text-slate-800 dark:text-white mt-1.5">0</h3>
+                    </a>
+                    <a href="#operations" onclick="opsSetFilter('mine')" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark">
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">My open requests</p>
+                        <h3 id="opsKpiMine" class="text-2xl font-black text-slate-800 dark:text-white mt-1.5">0</h3>
+                    </a>
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark">
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">In progress</p>
+                        <h3 id="opsKpiProgress" class="text-2xl font-black text-slate-800 dark:text-white mt-1.5">0</h3>
+                    </div>
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark">
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Completed this month</p>
+                        <h3 id="opsKpiCompleted" class="text-2xl font-black text-slate-800 dark:text-white mt-1.5">0</h3>
+                    </div>
+                </div>
+
+                <!-- Filter chips + list -->
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-glass-light dark:shadow-glass-dark overflow-hidden">
+                    <div class="flex flex-wrap items-center gap-2 px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+                        <div id="opsFilters" class="flex flex-wrap gap-1.5"></div>
+                        <div class="flex-grow"></div>
+                        <input id="opsSearch" oninput="opsDebouncedSearch()" placeholder="Search reqNo, vehicle, title…" class="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                    </div>
+                    <div class="overflow-x-auto max-h-[600px] overflow-y-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-50 dark:bg-slate-900/80 sticky top-0">
+                                <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                    <th class="px-5 py-3">Request</th><th class="px-5 py-3">Vehicle / Job</th><th class="px-5 py-3">Requested by</th><th class="px-5 py-3">Status</th><th class="px-5 py-3 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="opsListBody" class="divide-y divide-slate-100 dark:divide-slate-800/70"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Admin panel (ADMIN only) -->
+                <div id="opsAdminPanel" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-5"></div>
+            </section>
+
         </main>
+    </div>
+
+    <!-- Job Request modal (create / detail) -->
+    <div id="jobRequestModal" class="hidden fixed inset-0 bg-slate-950/60 overflow-y-auto h-full w-full flex items-start justify-center backdrop-blur-md z-50 p-4 sm:p-6">
+        <div class="relative bg-white dark:bg-slate-900 p-6 sm:p-8 rounded-3xl shadow-2xl max-w-3xl w-full my-6 border border-slate-100 dark:border-slate-800">
+            <div id="jobRequestModalBody"></div>
+        </div>
     </div>
 
     <!-- Modals -->
@@ -2605,6 +2696,7 @@
 
     <!-- Script Logic -->
     <script src="/js/app.js"></script>
+    <script src="/js/operations.js"></script>
 
     <!-- Job Cards module (unified Workshop + Stores system) -->
 

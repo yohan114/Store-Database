@@ -2863,7 +2863,7 @@
         // Central Router Engine
         function handleRouting() {
             const hash = window.location.hash || '#dashboard';
-            const views = ['dashboard', 'jobcards', 'jobcard-entry', 'programme', 'tracker', 'receiving', 'pricing', 'fleet', 'issued', 'issue-desk', 'inventory', 'batteries', 'battery-entry', 'battery-move', 'transfers', 'transfer-entry'];
+            const views = ['operations', 'dashboard', 'jobcards', 'jobcard-entry', 'programme', 'tracker', 'receiving', 'pricing', 'fleet', 'issued', 'issue-desk', 'inventory', 'batteries', 'battery-entry', 'battery-move', 'transfers', 'transfer-entry'];
             
             let matchedView = 'dashboard';
             let routeParam = null;
@@ -2926,6 +2926,9 @@
         // Renders active routed page views
         function renderCurrentView(param = null, subParam = null) {
             switch(currentView) {
+                case 'operations':
+                    if (typeof loadOperations === 'function') loadOperations();
+                    break;
                 case 'dashboard':
                     renderDashboard();
                     if (typeof renderUnifiedDashboard === 'function') renderUnifiedDashboard();
@@ -5832,12 +5835,16 @@
             fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then((data) => {
                 if (!data || !data.user) return;
                 const u = data.user;
+                window.__me = u;                                  // shared with the Operations module
                 const av = document.getElementById('userAvatar');
                 const nm = document.getElementById('userName');
                 const rl = document.getElementById('userRole');
                 if (av) av.textContent = initials(u.name, u.username);
                 if (nm) nm.textContent = u.name || u.username;
                 if (rl) rl.textContent = (u.roles && u.roles[0]) ? titleCase(u.roles[0]) : '';
+                // Operations module hooks (defined in operations.js, loaded after this).
+                if (typeof applyRoleScopedNav === 'function') applyRoleScopedNav(u);
+                if (typeof startNotifications === 'function') startNotifications();
             }).catch(() => {});
         })();
 

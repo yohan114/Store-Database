@@ -329,6 +329,59 @@ function init() {
         CREATE INDEX IF NOT EXISTS idx_dp_dateISO ON daily_programme(entryDateISO);
     `);
 
+    // ---- Operations: job requests + approval workflow ---------------------
+    exec(`
+        CREATE TABLE IF NOT EXISTS job_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reqNo TEXT,                       -- JR-YYYY-NNNN (assigned on submit)
+            type TEXT,                        -- INTERNAL | OUTSOURCED
+            status TEXT,                      -- DRAFT|PENDING_TM|PENDING_OM|APPROVED|IN_PROGRESS|COMPLETED|CLOSED|REJECTED
+            title TEXT, details TEXT,
+            vehicleMachinery TEXT, ecdNo TEXT, projectName TEXT, site TEXT,
+            priority TEXT,                    -- Normal | Urgent
+            neededBy TEXT, neededByISO TEXT,
+            vendorName TEXT, vendorEmail TEXT,
+            emailRecipients TEXT,             -- JSON array of extra selected recipient emails
+            emailSentAt TEXT,
+            requestedBy INTEGER, requestedByName TEXT, requestedAt TEXT,
+            tmApprovedBy INTEGER, tmApprovedByName TEXT, tmApprovedAt TEXT,
+            omApprovedBy INTEGER, omApprovedByName TEXT, omApprovedAt TEXT,
+            completedBy INTEGER, completedByName TEXT, completedAt TEXT,
+            rejectedBy INTEGER, rejectedByName TEXT, rejectedAt TEXT, rejectReason TEXT,
+            jobCardId INTEGER,                -- workshop job card auto-created on approval
+            createdBy INTEGER, createdAt TEXT, updatedAt TEXT
+        );
+        CREATE TABLE IF NOT EXISTS job_request_audits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            requestId INTEGER, userId INTEGER, userName TEXT,
+            action TEXT, fromStatus TEXT, toStatus TEXT, note TEXT, at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userId INTEGER, requestId INTEGER, reqNo TEXT,
+            message TEXT, isRead INTEGER DEFAULT 0, at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS outbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            requestId INTEGER, reqNo TEXT,
+            toAddr TEXT, cc TEXT, subject TEXT, body TEXT,
+            status TEXT, error TEXT, at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY, value TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_jr_status  ON job_requests(status);
+        CREATE INDEX IF NOT EXISTS idx_jr_reqBy   ON job_requests(requestedBy);
+        CREATE INDEX IF NOT EXISTS idx_jra_req    ON job_request_audits(requestId);
+        CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(userId, isRead);
+    `);
+
+    // Link a workshop job card back to the operations request that spawned it.
+    try {
+        const cols = all(`PRAGMA table_info(jobcards)`);
+        if (!cols.some(c => c.name === 'jobRequestId')) exec(`ALTER TABLE jobcards ADD COLUMN jobRequestId INTEGER;`);
+    } catch (e) { /* fresh DB already has it */ }
+
     // Lightweight migration: add the category column if upgrading an older DB.
     try {
         const cols = all(`PRAGMA table_info(items)`);

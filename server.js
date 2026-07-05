@@ -169,10 +169,10 @@ app.get('/api/portal/summary', (req, res) => {
         system: 'workshop',
         generatedAt: new Date().toISOString(),
         kpis: [
-            { label: 'Spend this month', value: rs(d.spend.mtd), tone: 'neutral' },
-            { label: 'Pending MRN lines', value: d.pending.counts.total, tone: d.pending.counts.total > 0 ? 'warn' : 'good' },
-            { label: 'Active job cards', value: d.jobs.active, tone: 'neutral' },
-            { label: 'Pending approvals', value: pendingJr, tone: pendingJr > 0 ? 'warn' : 'good' },
+            { label: 'Spend this month', value: rs(d.spend.mtd), tone: 'neutral', href: '/item_tracker.html#dashboard' },
+            { label: 'Pending MRN lines', value: d.pending.counts.total, tone: d.pending.counts.total > 0 ? 'warn' : 'good', href: '/item_tracker.html#tracker' },
+            { label: 'Active job cards', value: d.jobs.active, tone: 'neutral', href: '/item_tracker.html#jobcards' },
+            { label: 'Pending approvals', value: pendingJr, tone: pendingJr > 0 ? 'warn' : 'good', href: '/item_tracker.html#operations' },
         ],
     });
 });

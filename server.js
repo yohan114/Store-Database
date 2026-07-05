@@ -90,6 +90,15 @@ app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res) => {
     if (req.path === '/') return res.redirect('/item_tracker.html');
     res.sendFile(path.join(__dirname, 'item_tracker.html'));
 });
+// Compiled client scripts (source in src/client/*.ts, built by `npm run
+// build:client`). The app bundle sits behind the login like the page itself;
+// the login script must be public because it runs on the sign-in screen.
+app.get('/js/app.js', auth.requirePageAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'js', 'app.js'));
+});
+app.get('/js/login.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'js', 'login.js'));
+});
 // No blanket static serving: it exposed inventory.db, backups/ and the raw
 // data files to anyone on the network without a login. The app is fully
 // self-contained in item_tracker.html + login.html (assets come from CDNs).

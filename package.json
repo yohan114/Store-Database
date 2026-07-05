@@ -5,6 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build:client": "tsc -p tsconfig.client.json",
+    "typecheck": "tsc -p tsconfig.client.json --noEmit",
     "migrate": "node migrate_to_sqlite.js",
     "migrate:force": "node migrate_to_sqlite.js --force",
     "test:api": "node test_api.js",
@@ -21,5 +23,8 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
 }

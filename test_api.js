@@ -144,6 +144,11 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     { const r = await _fetch(BASE + '/inventory.db'); ok(r.status === 404, 'inventory.db is not downloadable'); }
     { const r = await _fetch(BASE + '/tracker_data.json'); ok(r.status === 404, 'tracker_data.json is not downloadable'); }
 
+    // compiled client scripts: app bundle behind login, login script public
+    { const r = await _fetch(BASE + '/js/app.js', { redirect: 'manual' }); ok(r.status === 302, 'unauthenticated /js/app.js redirects to login'); }
+    { const r = await _fetch(BASE + '/js/login.js'); ok(r.status === 200 && (await r.text()).includes('loginForm'), '/js/login.js served publicly'); }
+    { const r = await fetch(BASE + '/js/app.js'); ok(r.status === 200 && (await r.text()).includes('DatabaseSync'), 'authenticated /js/app.js serves the compiled app'); }
+
     // cleanup this block
     await j(await fetch(BASE + '/api/issues/' + okIss.id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
     await j(await fetch(BASE + '/api/items/' + rsId + '?password=E%26CWorkshop', { method: 'DELETE' }));

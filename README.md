@@ -16,6 +16,23 @@ npm run migrate        # builds inventory.db from the store data (safe to re-run
 npm start              # serves http://localhost:5000/item_tracker.html
 ```
 
+### TypeScript client
+
+The browser application is written in **TypeScript** under `src/client/`
+(`app.ts` — the main app, `login.ts` — the sign-in page, `globals.d.ts` — the
+domain types: `Item`, `ReceiptRec`, `IssueRec`, `BatteryRec`, `TransferRec`,
+`JobCard`, `QueueAction`). It compiles to plain classic scripts in `js/`
+(committed, so `npm start` needs no build step):
+
+```bash
+npm run build:client   # compile src/client -> js/ (run after editing client code)
+npm run typecheck      # type-check only, no emit
+```
+
+Never edit `js/*.js` directly — they are build output. The HTML files contain
+only markup plus two tiny bootstrap snippets (error collector, Tailwind
+config); all application logic lives in the TypeScript sources.
+
 On Windows you can double-click **`start_server.bat`** (runs all three steps).
 
 - First run seeds a default admin — **username `admin`, password `admin123`** —

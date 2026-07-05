@@ -66,6 +66,29 @@ npm run import:issues -- --commit        # write into inventory.db
 ```
 This repo already ships the imported data in `inventory.db`.
 
+### Completing the per-job cost (materials + issues + labour)
+Four idempotent backfill tools wire every historical requested material, issued
+item and daily labour line into its job card so each job shows a true total
+cost = **received parts + issued items + labour**. Each runs as a dry-run
+report by default; add `--commit` to write (or run them all with
+`npm run backfill:jobcost`):
+
+```bash
+npm run price:issues        # derive an issued item's price from its priced deliveries
+npm run import:service       # import the Job_Record "service" sheet (recorded cost)
+npm run link:jobs            # attach unlinked items/issues to their vehicle's job
+npm run reattribute:daily    # move daily labour off DW- catch-alls onto real jobs
+```
+
+- `link:jobs` attributes each material/issue in three tiers — exact date-window
+  match, nearest same-vehicle job within `--max-gap` days (default 60), else a
+  per-vehicle `DW-<vehicle>` catch-all (`--catchall`).
+- Issued items now carry an editable **unit price** (auto-suggested from the
+  item's last priced delivery) and roll into job cost; a `recordedCost` column
+  holds flat service-log / C-job totals for reference (never double-counted).
+- Labour keeps the workshop rule — **each mechanic on a line is costed at the
+  full hours × their rate** (e.g. `Saman, Ruwan – 10h` → Saman×10 + Ruwan×10).
+
 ## What's inside
 
 ### Workshop

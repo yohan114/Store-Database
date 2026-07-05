@@ -842,7 +842,10 @@ function renderIssuesTable() {
                         ${is.category ? `<div class="mt-1"><span class="inline-flex text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md border ${categoryBadgeClass(is.category)}">${escapeHtml(is.category)}</span></div>` : ''}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-700 dark:text-slate-300">${escapeHtml(is.vehicleMachinery) || '-'}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-extrabold text-indigo-650 dark:text-indigo-400">${is.qty}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-extrabold text-indigo-650 dark:text-indigo-400">
+                        ${is.qty}
+                        ${is.unitPrice != null ? `<div class="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5">@ ${formatCurrency(is.unitPrice)} = ${formatCurrency(is.qty * is.unitPrice)}</div>` : `<div class="text-[10px] text-slate-400 dark:text-slate-600 mt-0.5 italic">no price</div>`}
+                    </td>
                     <td class="px-6 py-4 whitespace-nowrap text-xs text-slate-600 dark:text-slate-400">
                         <div class="font-semibold text-slate-700 dark:text-slate-300">${escapeHtml(is.issuedTo) || '-'}</div>
                         ${is.issuedBy ? `<div class="text-slate-400 dark:text-slate-500">by ${escapeHtml(is.issuedBy)}</div>` : ''}
@@ -915,10 +918,12 @@ function setupIssueDesk(type = null, id = null) {
             document.getElementById('issueDeskCategory').value = existingIssue.category || '';
             document.getElementById('issueDeskItemDesc').value = existingIssue.itemDesc || '';
             document.getElementById('issueDeskQty').value = existingIssue.qty || '';
+            document.getElementById('issueDeskUnitPrice').value = (existingIssue.unitPrice != null ? existingIssue.unitPrice : '');
             document.getElementById('issueDeskMrn').value = existingIssue.mrnNum || '';
             document.getElementById('issueDeskIssuedTo').value = existingIssue.issuedTo || '';
             document.getElementById('issueDeskIssuedBy').value = existingIssue.issuedBy || '';
             document.getElementById('issueDeskNotes').value = existingIssue.notes || '';
+            updateIssueDeskCost();
             // Match MRN request item: the hard itemId link wins, then MRN + name.
             if (existingIssue.itemId || existingIssue.mrnNum) {
                 const matchedItem = displayAll.find(item => existingIssue.itemId
@@ -978,10 +983,12 @@ function setupIssueDesk(type = null, id = null) {
         document.getElementById('issueDeskCategory').value = '';
         document.getElementById('issueDeskItemDesc').value = '';
         document.getElementById('issueDeskQty').value = '';
+        document.getElementById('issueDeskUnitPrice').value = '';
         document.getElementById('issueDeskMrn').value = '';
         document.getElementById('issueDeskIssuedTo').value = '';
         document.getElementById('issueDeskIssuedBy').value = '';
         document.getElementById('issueDeskNotes').value = '';
+        updateIssueDeskCost();
         searchInput.disabled = false;
     }
 }
@@ -1004,6 +1011,8 @@ function handleIssueItemSelection(itemId) {
     document.getElementById('issueDeskCategory').value = item.category || '';
     document.getElementById('issueDeskItemDesc').value = item.itemDesc || '';
     document.getElementById('issueDeskMrn').value = item.mrnNum || '';
+    // Suggest a unit price from this item's priced deliveries (only if blank).
+    suggestIssueDeskPrice(item.name || '', false);
     // We can show details in the metadata box
     metaContainer.innerHTML = `
                 <div class="space-y-1 w-full text-xs font-semibold">
@@ -1013,6 +1022,33 @@ function handleIssueItemSelection(itemId) {
                     <div class="text-[10px] text-slate-450 dark:text-slate-500 font-medium">Requisition opened: ${item.reqDate}</div>
                 </div>
             `;
+}
+// Recompute the "Issue value = qty × unit price" hint under the price field.
+function updateIssueDeskCost() {
+    const qty = parseFloat((document.getElementById('issueDeskQty') || {}).value) || 0;
+    const price = parseFloat((document.getElementById('issueDeskUnitPrice') || {}).value);
+    const line = document.getElementById('issueDeskCostLine');
+    if (!line)
+        return;
+    line.textContent = (qty > 0 && price >= 0 && !isNaN(price)) ? `Issue value: ${formatCurrency(qty * price)}` : '';
+}
+// Fetch a suggested unit price for an item name. When force=false, only
+// fills the field if it's currently empty (so a manual edit is kept).
+async function suggestIssueDeskPrice(itemName, force) {
+    const el = document.getElementById('issueDeskUnitPrice');
+    if (!el || !itemName)
+        return;
+    if (!force && String(el.value).trim() !== '') {
+        updateIssueDeskCost();
+        return;
+    }
+    try {
+        const data = await (await fetch('/api/issues/suggest-price?itemName=' + encodeURIComponent(itemName))).json();
+        if (data && data.unitPrice != null && (force || String(el.value).trim() === ''))
+            el.value = data.unitPrice;
+    }
+    catch (e) { /* leave blank on failure */ }
+    updateIssueDeskCost();
 }
 function handleIssueFilterChange() {
     clearTimeout(issueSearchTimeout);
@@ -3862,6 +3898,8 @@ if (issueDeskForm) {
         const id = document.getElementById('issueDeskId').value;
         const itemId = document.getElementById('issueDeskItemSelect').value;
         const qtyVal = parseFloat(document.getElementById('issueDeskQty').value) || 0;
+        const priceRaw = document.getElementById('issueDeskUnitPrice').value;
+        const unitPrice = String(priceRaw).trim() === '' ? null : (parseFloat(priceRaw) || 0);
         if (itemId) {
             const item = allItems.find(i => String(i.id) === String(itemId));
             if (item) {
@@ -3889,6 +3927,7 @@ if (issueDeskForm) {
             issuedTo: document.getElementById('issueDeskIssuedTo').value.trim(),
             issuedBy: document.getElementById('issueDeskIssuedBy').value.trim(),
             notes: document.getElementById('issueDeskNotes').value.trim(),
+            unitPrice,
             // Hard link to the request line being drawn from — the server
             // validates stock against it and it survives item renames.
             itemId: itemId ? Number(itemId) : null
@@ -4792,11 +4831,13 @@ function renderJobCardModal(jc) {
 
                 ${jc.details ? `<div class="mb-5"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Required Work</div><div class="text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3">${jcEsc(jc.details)}</div></div>` : ''}
 
-                <div class="grid grid-cols-3 gap-3 mb-5">
-                    <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Parts</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.partsCost || 0)}</div></div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                    <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Received Parts</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.receivedPartsCost || 0)}</div></div>
+                    <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Issued Items</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.issuesCost || 0)}</div></div>
                     <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Labour</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.labourCost || 0)}</div></div>
-                    <div class="rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Total Job Cost</div><div class="text-base font-black text-indigo-700 dark:text-indigo-400 mt-0.5">${jcCur(jc.totalCost || 0)}</div></div>
+                    <div class="rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Total Job Cost</div><div class="text-base font-black text-indigo-700 dark:text-indigo-400 mt-0.5">${jcCur(jc.totalCost || 0)}</div><div class="text-[9px] font-semibold text-indigo-400/80 mt-0.5">parts ${jcCur(jc.partsCost || 0)} + labour ${jcCur(jc.labourCost || 0)}</div></div>
                 </div>
+                ${jc.recordedCost != null && jc.recordedCost > 0 ? `<div class="mb-5 -mt-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 rounded-xl px-3 py-2">Externally recorded cost (service log / C-job): <span class="font-black text-slate-700 dark:text-slate-200">${jcCur(jc.recordedCost)}</span> <span class="text-slate-400">— shown for reference, not added to the computed total above.</span></div>` : ''}
 
                 <!-- Daily Programme mount (Phase 3) -->
                 <div id="jcProgrammeMount"></div>
@@ -4964,18 +5005,23 @@ function renderJobProgramme(jc) {
     window.__jcProgramme = {};
     entries.forEach((e) => { window.__jcProgramme[e.id] = e; });
     const mechOpts = (window.__mechanics || []).map((n) => `<option value="${jcEsc(n)}">${jcEsc(n)}</option>`).join('');
-    const rows = entries.map((e) => `
+    const rows = entries.map((e) => {
+        // Per-mechanic breakdown (rate × full hours each) — the "saman×10, ruwan×10" detail.
+        const bd = (e.mechanicBreakdown || []).map((m) => `<span class="inline-block mr-2 whitespace-nowrap">${jcEsc(m.name)}: ${m.hours}h${m.rate ? ' @' + m.rate + ' = ' + jcCur(m.cost) : ' <span class=\"text-slate-400\">(unrated)</span>'}</span>`).join('');
+        return `
                 <div class="flex items-start justify-between gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
                     <div class="min-w-0">
                         <div class="text-xs font-bold text-slate-700 dark:text-slate-200">${jcDate(e.entryDateISO)} · ${e.hours || 0}h ${e.mechanics ? '· ' + jcEsc(e.mechanics) : ''}</div>
                         ${e.workDescription ? `<div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${jcEsc(e.workDescription)}</div>` : ''}
+                        ${bd ? `<div class="text-[10px] text-slate-400 dark:text-slate-500 mt-1 font-semibold">${bd}</div>` : ''}
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                         <span class="text-xs font-extrabold text-slate-700 dark:text-slate-200">${jcCur(e.labourCost || 0)}</span>
                         <button onclick="editJobDaily(${e.id})" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">Edit</button>
                         <button onclick="deleteJobDaily(${e.id}, ${jc.id})" class="text-[11px] font-bold text-rose-500">Del</button>
                     </div>
-                </div>`).join('');
+                </div>`;
+    }).join('');
     mount.innerHTML = `
                 <div class="mt-2 mb-5 rounded-2xl border border-slate-150 dark:border-slate-800 overflow-hidden">
                     <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-150 dark:border-slate-800">
@@ -5479,18 +5525,19 @@ function renderJobIssues(jc) {
                 <div class="flex items-center justify-between gap-3 py-2 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
                     <div class="min-w-0">
                         <div class="text-xs font-bold text-slate-700 dark:text-slate-200">${jcEsc(it.itemName || '—')}</div>
-                        <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">${jcDate(it.issueDateISO)}${it.category ? ' · ' + jcEsc(it.category) : ''}</div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">${jcDate(it.issueDateISO)}${it.category ? ' · ' + jcEsc(it.category) : ''}${it.unitPrice != null ? ' · Qty ' + (it.qty || 0) + ' @ ' + jcCur(it.unitPrice) : ''}</div>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
-                        <span class="text-xs font-extrabold text-slate-700 dark:text-slate-200">Qty ${it.qty || 0}</span>
+                        <span class="text-xs font-extrabold ${it.lineCost > 0 ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400'}">${it.unitPrice != null ? jcCur(it.lineCost) : 'Qty ' + (it.qty || 0) + ' · no price'}</span>
                         <button onclick="unlinkIssue(${it.id}, ${jc.id})" class="text-[11px] font-bold text-rose-500">Unlink</button>
                     </div>
                 </div>`).join('');
+    const issCounts = jc.unpricedIssues ? ` · <span class="text-rose-500">${jc.unpricedIssues} no price</span>` : '';
     mount.innerHTML = `
                 <div class="mb-5 rounded-2xl border border-slate-150 dark:border-slate-800 overflow-hidden">
                     <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-150 dark:border-slate-800">
-                        <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Issued Items / Consumables (${issues.length})</span>
-                        <span class="text-[10px] font-semibold text-slate-400">qty only · not in cost</span>
+                        <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Issued Items / Consumables (${issues.length})${issCounts}</span>
+                        <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Issued: ${jcCur(jc.issuesCost || 0)}</span>
                     </div>
                     <div class="px-4 py-2">${rows || '<div class="py-3 text-xs text-slate-400 italic">No issued items linked yet.</div>'}</div>
                     <div class="px-4 py-3 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800">

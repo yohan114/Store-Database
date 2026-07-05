@@ -78,6 +78,7 @@ interface IssueRec {
     mrnNum?: string;
     purchaseSource?: string;
     notes?: string;
+    unitPrice?: number | null;      // priced-out cost of the issued item
     itemId?: number | null;         // hard link to the request line
     jobCardId?: number | null;
     jobNo?: string | null;

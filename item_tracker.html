@@ -2018,7 +2018,7 @@
 
                             <div>
                                 <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Item Name <span class="text-red-500">*</span></label>
-                                <input type="text" id="issueDeskItemName" required placeholder="e.g. Oil Filter" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3.5 border focus:border-indigo-500 focus:ring-indigo-500 outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100 font-semibold">
+                                <input type="text" id="issueDeskItemName" required placeholder="e.g. Oil Filter" onchange="suggestIssueDeskPrice(this.value, false)" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3.5 border focus:border-indigo-500 focus:ring-indigo-500 outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100 font-semibold">
                             </div>
 
                             <div>
@@ -2035,7 +2035,13 @@
 
                             <div>
                                 <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Quantity Issued <span class="text-red-500">*</span></label>
-                                <input type="number" id="issueDeskQty" step="0.01" required min="0.01" placeholder="e.g. 2" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3.5 border outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100 font-extrabold">
+                                <input type="number" id="issueDeskQty" step="0.01" required min="0.01" placeholder="e.g. 2" oninput="updateIssueDeskCost()" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3.5 border outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100 font-extrabold">
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Unit Price (Rs.) <span class="text-slate-400 normal-case font-medium">(auto-suggested, editable)</span></label>
+                                <input type="number" id="issueDeskUnitPrice" step="0.01" min="0" placeholder="auto from last delivery" oninput="updateIssueDeskCost()" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3.5 border outline-none transition text-sm bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-semibold">
+                                <p id="issueDeskCostLine" class="text-[11px] font-bold text-indigo-650 dark:text-indigo-400 mt-1.5"></p>
                             </div>
 
                             <div>

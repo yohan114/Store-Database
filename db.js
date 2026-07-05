@@ -363,6 +363,21 @@ function init() {
     } catch (e) { /* fresh DB already has it */ }
     try { exec(`CREATE INDEX IF NOT EXISTS idx_issues_itemId ON issues(itemId);`); } catch (e) {}
 
+    // Migration: a unit price on issued items so they roll into job cost.
+    // NULL = unpriced; the app auto-suggests from the item's priced deliveries.
+    try {
+        const cols = all(`PRAGMA table_info(issues)`);
+        if (!cols.some(c => c.name === 'unitPrice')) exec(`ALTER TABLE issues ADD COLUMN unitPrice REAL;`);
+    } catch (e) { /* fresh DB already has it */ }
+
+    // Migration: an externally-recorded flat cost on a job card (service-log /
+    // C-job totals that predate the per-mechanic computed model). Shown for
+    // reference alongside — never folded into — the computed labour+parts total.
+    try {
+        const cols = all(`PRAGMA table_info(jobcards)`);
+        if (!cols.some(c => c.name === 'recordedCost')) exec(`ALTER TABLE jobcards ADD COLUMN recordedCost REAL;`);
+    } catch (e) { /* fresh DB already has it */ }
+
     // Normalise purchase sources to the two canonical values. Idempotent and
     // cheap, so it runs on every boot — old spellings can never accumulate.
     try {

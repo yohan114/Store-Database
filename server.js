@@ -596,6 +596,29 @@ app.get('/api/issues', (req, res) => {
     }
 });
 
+// Suggested unit price for an issued item: the most recent priced 'Receive'
+// receipt of the same item name (case-insensitive). Null when the item was
+// never priced. Used to auto-fill the issue price so issues roll into job cost.
+function suggestIssuePrice(itemName) {
+    const name = String(itemName || '').trim().toLowerCase();
+    if (!name) return null;
+    const row = dbApi.get(
+        `SELECT r.unitPrice AS p FROM receipts r JOIN items i ON i.id = r.itemId
+         WHERE r.transactionType='Receive' AND r.unitPrice IS NOT NULL
+           AND LOWER(TRIM(i.itemName)) = ?
+         ORDER BY r.deliveryDateISO DESC, r.id DESC LIMIT 1`, [name]);
+    return row ? row.p : null;
+}
+
+// GET /api/issues/suggest-price?itemName=... -> { unitPrice }
+app.get('/api/issues/suggest-price', (req, res) => {
+    try {
+        res.json({ unitPrice: suggestIssuePrice(req.query.itemName) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // How much of a linked request line is still available to issue: receipts
 // minus issues drawn from it (linked by itemId, or legacy rows matching the
 // same MRN + name). Only issues that pick a request line (itemId) are hard-
@@ -630,14 +653,17 @@ app.post('/api/issues', (req, res) => {
         const category = b.category && String(b.category).trim() ? String(b.category).trim() : classify(itemName, itemDesc);
         const itemId = b.itemId ? parseInt(b.itemId) : null;
         const qty = Number(b.qty) || 0;
+        // Explicit price wins; otherwise auto-suggest from the item's priced deliveries.
+        const unitPrice = Object.prototype.hasOwnProperty.call(b, 'unitPrice')
+            ? numOrNull(b.unitPrice) : suggestIssuePrice(itemName);
         const stockErr = checkIssueStock({ itemId, qty, excludeIssueId: null });
         if (stockErr) return res.status(400).json({ error: stockErr });
         const now = nowISO();
         const r = dbApi.run(
-            `INSERT INTO issues (issueDate, issueDateISO, vehicleMachinery, itemName, itemDesc, qty, category, issuedTo, issuedBy, mrnNum, purchaseSource, notes, itemId, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO issues (issueDate, issueDateISO, vehicleMachinery, itemName, itemDesc, qty, category, issuedTo, issuedBy, mrnNum, purchaseSource, notes, itemId, unitPrice, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [s(b.issueDate), toISO(b.issueDate), s(b.vehicleMachinery), itemName, itemDesc, qty, category,
-             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), itemId, now, now]
+             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), itemId, unitPrice, now, now]
         );
         // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
         let issJobNo = null;
@@ -665,12 +691,14 @@ app.put('/api/issues/:id', (req, res) => {
             ? (b.itemId ? parseInt(b.itemId) : null)
             : existing.itemId;
         const qty = Number(b.qty) || 0;
+        const unitPrice = Object.prototype.hasOwnProperty.call(b, 'unitPrice')
+            ? numOrNull(b.unitPrice) : suggestIssuePrice(itemName);
         const stockErr = checkIssueStock({ itemId, qty, excludeIssueId: id });
         if (stockErr) return res.status(400).json({ error: stockErr });
         dbApi.run(
-            `UPDATE issues SET issueDate=?, issueDateISO=?, vehicleMachinery=?, itemName=?, itemDesc=?, qty=?, category=?, issuedTo=?, issuedBy=?, mrnNum=?, purchaseSource=?, notes=?, itemId=?, updatedAt=? WHERE id=?`,
+            `UPDATE issues SET issueDate=?, issueDateISO=?, vehicleMachinery=?, itemName=?, itemDesc=?, qty=?, category=?, issuedTo=?, issuedBy=?, mrnNum=?, purchaseSource=?, notes=?, itemId=?, unitPrice=?, updatedAt=? WHERE id=?`,
             [s(b.issueDate), toISO(b.issueDate), s(b.vehicleMachinery), itemName, itemDesc, qty, category,
-             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), itemId, nowISO(), id]
+             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), itemId, unitPrice, nowISO(), id]
         );
         res.json({ success: true, category });
     } catch (e) {

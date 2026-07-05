@@ -13,6 +13,7 @@
  */
 
 const db = require('./db');
+const programme = require('./programme');
 
 const STATUSES = ['OPEN', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CLOSED'];
 
@@ -200,13 +201,33 @@ function get(id) {
     });
     jc.pendingCount = (jc.linkedItems || []).filter((it) => it.notReceived).length;
     jc.unpricedItems = (jc.linkedItems || []).filter((it) => it.unpriced).length;
-    jc.partsCost = round2((jc.linkedItems || []).reduce((sum, it) => sum + (it.lineCost || 0), 0));
-    jc.totalCost = round2((jc.labourCost || 0) + jc.partsCost);
-    // Issued items (consumables) linked to this job — informational, no cost.
+    jc.receivedPartsCost = round2((jc.linkedItems || []).reduce((sum, it) => sum + (it.lineCost || 0), 0));
+    // Issued items (consumables) linked to this job — now priced, so they
+    // contribute to job cost. Each carries a unit price (auto-derived from the
+    // item's priced deliveries, editable on the Issue Desk); lineCost = qty×price.
     try {
-        jc.linkedIssues = db.all('SELECT id, issueDate, issueDateISO, itemName, qty, category, issuedTo FROM issues WHERE jobCardId=? ORDER BY issueDateISO DESC, id DESC', [id]);
+        jc.linkedIssues = db.all('SELECT id, issueDate, issueDateISO, itemName, qty, category, issuedTo, unitPrice FROM issues WHERE jobCardId=? ORDER BY issueDateISO DESC, id DESC', [id]);
     } catch (_) { jc.linkedIssues = []; }
+    (jc.linkedIssues || []).forEach((s) => {
+        s.lineCost = (s.unitPrice != null) ? round2((Number(s.qty) || 0) * s.unitPrice) : 0;
+        s.unpriced = (s.unitPrice == null);
+    });
     jc.issuesCount = (jc.linkedIssues || []).length;
+    jc.issuesCost = round2((jc.linkedIssues || []).reduce((sum, s) => sum + (s.lineCost || 0), 0));
+    jc.unpricedIssues = (jc.linkedIssues || []).filter((s) => s.unpriced).length;
+    // Parts = received materials + issued consumables; Total = labour + parts.
+    jc.partsCost = round2(jc.receivedPartsCost + jc.issuesCost);
+    jc.totalCost = round2((jc.labourCost || 0) + jc.partsCost);
+    // Per-mechanic labour breakdown per daily line (rate × full hours each),
+    // mirroring the workshop's "Mechanic Breakdown" — for the cost cockpit.
+    const rm = programme.rateMap();
+    (jc.programme || []).forEach((dp) => {
+        const hours = Number(dp.hours) || 0;
+        dp.mechanicBreakdown = String(dp.mechanics || '').split(',').map((x) => x.trim()).filter(Boolean).map((name) => {
+            const rate = programme.rateFor(name, rm);
+            return { name, rate, hours, cost: rate ? round2(hours * rate) : 0 };
+        });
+    });
     return jc;
 }
 

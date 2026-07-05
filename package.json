@@ -11,7 +11,12 @@
     "migrate:force": "node migrate_to_sqlite.js --force",
     "test:api": "node test_api.js",
     "import:workshop": "node tools/import_workshop.js",
-    "import:issues": "node tools/import_issues.js"
+    "import:issues": "node tools/import_issues.js",
+    "import:service": "node tools/import_service.js",
+    "price:issues": "node tools/price_issues.js",
+    "link:jobs": "node tools/link_all_to_jobs.js",
+    "reattribute:daily": "node tools/reattribute_daily.js",
+    "backfill:jobcost": "node tools/price_issues.js --commit && node tools/import_service.js --commit && node tools/link_all_to_jobs.js --commit --catchall && node tools/reattribute_daily.js --commit"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",

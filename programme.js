@@ -173,5 +173,5 @@ function mechanicUpdate(id, form) {
 module.exports = {
     ensureSeedMechanics, computeLabour, recomputeJobLabour,
     listForJob, listByDate, create, update, remove,
-    mechanicsList, mechanicAdd, mechanicUpdate, rateMap,
+    mechanicsList, mechanicAdd, mechanicUpdate, rateMap, rateFor,
 };

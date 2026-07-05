@@ -388,6 +388,19 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ({ body: jcGet } = await j(await fetch(BASE + '/api/jobcards/' + jcId)));
     ok(jcGet.partsCost === 500 && jcGet.totalCost === 6900, 'parts cost from linked MRN + total job cost (500 + 6400 = 6900)', 'total=' + jcGet.totalCost);
 
+    // --- Cost cockpit: per-mechanic breakdown + issued items roll into total ---
+    ok(jcGet.receivedPartsCost === 500 && jcGet.issuesCost === 0, 'cockpit splits receivedParts (500) vs issued (0)');
+    const dpRow = (jcGet.programme || [])[0];
+    const bd = dpRow && dpRow.mechanicBreakdown;
+    ok(Array.isArray(bd) && bd.length === 2 && bd.find(m => m.name === 'Saman' && m.cost === 3400) && bd.find(m => m.name === 'Vinod' && m.cost === 3000),
+        'per-mechanic breakdown costs each at full hours (Saman 8×425=3400, Vinod 8×375=3000)');
+    // Link a PRICED issue to the job -> issuesCost + total rise
+    let { body: jcIssue } = await j(await fetch(BASE + '/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ issueDate: '2026-06-10', vehicleMachinery: 'TEST-VH', itemName: 'JC Consumable', qty: 4, unitPrice: 25, jobCardId: jcId }) }));
+    ({ body: jcGet } = await j(await fetch(BASE + '/api/jobcards/' + jcId)));
+    ok(jcGet.issuesCost === 100 && jcGet.partsCost === 600 && jcGet.totalCost === 7000,
+        'priced issue rolls into job cost (issued 4×25=100; parts 600; total 6400+600=7000)', 'total=' + jcGet.totalCost);
+    await j(await fetch(BASE + '/api/issues/' + jcIssue.id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+
     let { body: dash } = await j(await fetch(BASE + '/api/dashboard'));
     ok(typeof dash.spend.mtd === 'number' && typeof dash.spend.ytd === 'number' && !!dash.received && Array.isArray(dash.suppliers) && !!dash.jobs, 'GET /api/dashboard returns spend/received/suppliers/jobs');
 

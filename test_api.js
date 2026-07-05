@@ -444,6 +444,22 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
         'editing an issue keeps its manual unit price (25) while qty changes', 'price=' + (editedIssue && editedIssue.unitPrice));
     await j(await fetch(BASE + '/api/issues/' + jcIssue.id, { method: 'DELETE' }));
 
+    // P2.16 — an auto-linked item records its provenance (EXACT, in-window)
+    let { body: trJc } = await j(await fetch(BASE + '/api/jobcards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'INTERNAL', vehicleMachinery: 'TRG-VH', date: '2026-06-20', details: 'trigger test' }) }));
+    const trJcId = trJc.jobcard.id;
+    let { body: trItem } = await j(await fetch(BASE + '/api/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mrnNum: 'TRG-1', vehicleMachinery: 'TRG-VH', itemName: 'Trig part', reqQty: 1, reqDate: '2026-06-20' }) }));
+    let { body: trItems } = await j(await fetch(BASE + '/api/items?search=TRG-1&page=1&limit=5'));
+    const linkedTr = (trItems.items || []).find((x) => x.mrnNum === 'TRG-1');
+    ok(linkedTr && linkedTr.jobCardId === trJcId && linkedTr.linkMethod === 'EXACT',
+        'auto-linked item records linkMethod=EXACT provenance', 'method=' + (linkedTr && linkedTr.linkMethod));
+    // P2.15 — deleting the job card unlinks its item via the FK-emulation trigger
+    await j(await fetch(BASE + '/api/jobcards/' + trJcId, { method: 'DELETE' }));
+    let { body: trItems2 } = await j(await fetch(BASE + '/api/items?search=TRG-1&page=1&limit=5'));
+    const afterDel = (trItems2.items || []).find((x) => x.mrnNum === 'TRG-1');
+    ok(afterDel && afterDel.jobCardId === null && afterDel.linkMethod === null,
+        'deleting a job card unlinks its item + clears provenance (FK trigger)', 'jobCardId=' + (afterDel && afterDel.jobCardId));
+    await j(await fetch(BASE + '/api/items/' + trItem.id, { method: 'DELETE' }));
+
     let { body: dash } = await j(await fetch(BASE + '/api/dashboard'));
     ok(typeof dash.spend.mtd === 'number' && typeof dash.spend.ytd === 'number' && !!dash.received && Array.isArray(dash.suppliers) && !!dash.jobs, 'GET /api/dashboard returns spend/received/suppliers/jobs');
 

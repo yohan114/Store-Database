@@ -71,6 +71,22 @@ function transaction(fn) {
     }
 }
 
+/**
+ * Consistent, non-blocking backup to destPath (review finding 19).
+ * better-sqlite3's online db.backup() is async + WAL-consistent and never
+ * freezes the event loop the way copyFileSync did. Falls back to an async file
+ * copy (after a WAL checkpoint) on node:sqlite, which lacks a backup API.
+ */
+function backup(destPath) {
+    if (ENGINE === 'better-sqlite3' && typeof db.backup === 'function') {
+        return db.backup(destPath);   // Promise
+    }
+    return new Promise((resolve, reject) => {
+        try { db.exec('PRAGMA wal_checkpoint(TRUNCATE);'); } catch (_) {}
+        fs.copyFile(DB_FILE, destPath, (err) => (err ? reject(err) : resolve({ totalPages: 0 })));
+    });
+}
+
 // ---- Date normalization ----------------------------------------------------
 // Stored dates are inconsistent ("12/11/2025" M/D/YYYY, "2025-12-11", etc.).
 // We normalize every date to ISO "YYYY-MM-DD" in a parallel *ISO column so that
@@ -169,12 +185,14 @@ function init() {
         CREATE INDEX IF NOT EXISTS idx_issues_dateISO   ON issues(issueDateISO);
     `);
 
-    // Refined migration check: drop old tables if upgrading
+    // Migration (additive, non-destructive): an older batteries table may lack
+    // the `brand` column. Previously this DROPPED the batteries + movements
+    // tables — a data-loss landmine (review finding 18). Add the column instead
+    // so existing battery records survive the upgrade.
     try {
         const cols = all(`PRAGMA table_info(batteries)`);
         if (cols.length > 0 && !cols.some(c => c.name === 'brand')) {
-            exec(`DROP TABLE IF EXISTS battery_movements;`);
-            exec(`DROP TABLE IF EXISTS batteries;`);
+            exec(`ALTER TABLE batteries ADD COLUMN brand TEXT;`);
         }
     } catch (_) {}
 
@@ -424,6 +442,29 @@ function init() {
         if (!cols.some(c => c.name === 'unitPrice')) exec(`ALTER TABLE issues ADD COLUMN unitPrice REAL;`);
     } catch (e) { /* fresh DB already has it */ }
 
+    // Migration: job-link provenance (review finding 16). linkMethod records HOW
+    // an item/issue was attributed to its job — EXACT (in the ±2-day window),
+    // NEAR (nearest within 60 d, a guess), CATCHALL (per-vehicle bucket) or
+    // MANUAL — and linkGap the day distance. This makes low-confidence backfill
+    // links auditable and reversible instead of anonymous.
+    ['items', 'issues'].forEach((tbl) => {
+        try {
+            const cols = all(`PRAGMA table_info(${tbl})`);
+            if (!cols.some(c => c.name === 'linkMethod')) exec(`ALTER TABLE ${tbl} ADD COLUMN linkMethod TEXT;`);
+            if (!cols.some(c => c.name === 'linkGap')) exec(`ALTER TABLE ${tbl} ADD COLUMN linkGap INTEGER;`);
+        } catch (e) { /* fresh DB already has the columns */ }
+    });
+
+    // Migration: suspect-date-repair provenance (review finding 17). Before the
+    // normalize tool rewrites a bad *ISO year, it stores the original in
+    // dateRepairedFrom so a wrong guess is recoverable instead of overwritten.
+    ['items', 'receipts', 'issues'].forEach((tbl) => {
+        try {
+            const cols = all(`PRAGMA table_info(${tbl})`);
+            if (!cols.some(c => c.name === 'dateRepairedFrom')) exec(`ALTER TABLE ${tbl} ADD COLUMN dateRepairedFrom TEXT;`);
+        } catch (e) { /* fresh DB already has the column */ }
+    });
+
     // Migration: an externally-recorded flat cost on a job card (imported
     // service-log / C-job totals that predate the per-mechanic computed model).
     // The costing rule (costing.jobTotal) takes max(computed, recordedCost), so
@@ -433,18 +474,74 @@ function init() {
         if (!cols.some(c => c.name === 'recordedCost')) exec(`ALTER TABLE jobcards ADD COLUMN recordedCost REAL;`);
     } catch (e) { /* fresh DB already has it */ }
 
-    // Normalise purchase sources to the canonical values from the shared
-    // taxonomy (costing.PURCHASE_SOURCES). Idempotent + cheap, so it runs every
-    // boot — old spellings can never accumulate and the alias list lives in one
-    // place. A new alias is picked up here automatically.
+    // Referential integrity — FK-emulation triggers (review finding 15).
+    // The tables predate `REFERENCES`, and retrofitting real foreign keys needs
+    // a full table rebuild (a maintenance-window job). These triggers give the
+    // same ON DELETE behaviour now, at the DB level, so any delete path — not
+    // just the app's remove() helpers — cleans up its children instead of
+    // leaving orphaned rows that mis-cost rollups. CREATE IF NOT EXISTS => safe
+    // to run every boot.
     try {
-        for (const src of costing.PURCHASE_SOURCES) {
-            const ph = src.aliases.map(() => '?').join(',');
-            run(`UPDATE receipts SET purchaseSource=? WHERE LOWER(TRIM(purchaseSource)) IN (${ph}) AND purchaseSource <> ?`,
-                [src.canonical, ...src.aliases, src.canonical]);
-        }
-    } catch (e) { /* table may not exist yet on a brand-new DB */ }
+        exec(`
+            CREATE TRIGGER IF NOT EXISTS fk_jobcards_del AFTER DELETE ON jobcards BEGIN
+                UPDATE items  SET jobCardId=NULL, jobNo=NULL, linkMethod=NULL, linkGap=NULL WHERE jobCardId=OLD.id;
+                UPDATE issues SET jobCardId=NULL, jobNo=NULL, linkMethod=NULL, linkGap=NULL WHERE jobCardId=OLD.id;
+                UPDATE job_requests SET jobCardId=NULL WHERE jobCardId=OLD.id;
+                DELETE FROM daily_programme WHERE jobCardId=OLD.id;
+                DELETE FROM job_audits WHERE jobCardId=OLD.id;
+            END;
+            CREATE TRIGGER IF NOT EXISTS fk_items_del AFTER DELETE ON items BEGIN
+                DELETE FROM receipts WHERE itemId=OLD.id;
+                UPDATE issues SET itemId=NULL WHERE itemId=OLD.id;
+            END;
+            CREATE TRIGGER IF NOT EXISTS fk_batteries_del AFTER DELETE ON batteries BEGIN
+                DELETE FROM battery_movements WHERE batteryId=OLD.id;
+            END;
+            CREATE TRIGGER IF NOT EXISTS fk_jobrequests_del AFTER DELETE ON job_requests BEGIN
+                DELETE FROM job_request_audits WHERE requestId=OLD.id;
+                UPDATE notifications SET requestId=NULL WHERE requestId=OLD.id;
+            END;
+            CREATE TRIGGER IF NOT EXISTS fk_users_del AFTER DELETE ON users BEGIN
+                DELETE FROM sessions WHERE userId=OLD.id;
+            END;
+        `);
+    } catch (e) { console.warn('[DB] trigger setup warning:', e.message); }
+
+    // ---- Versioned one-time data migrations (PRAGMA user_version) ----------
+    // Everything above is idempotent DDL (CREATE/ALTER IF NOT EXISTS) that is
+    // safe to re-run. The blocks below rewrite DATA once per version bump so the
+    // boot no longer rewrites the receipts table on every start (finding 18).
+    const userVersion = () => Number((get('PRAGMA user_version') || {}).user_version || 0);
+    const setUserVersion = (v) => exec(`PRAGMA user_version = ${Number(v)};`);
+    const SCHEMA_VERSION = 2;
+    let fromV = userVersion();
+
+    if (fromV < 1) {
+        // v1 — canonicalise historical purchaseSource spellings once. New writes
+        // are already canonicalised by the server, so this only fixes old rows.
+        try {
+            for (const src of costing.PURCHASE_SOURCES) {
+                const ph = src.aliases.map(() => '?').join(',');
+                run(`UPDATE receipts SET purchaseSource=? WHERE LOWER(TRIM(purchaseSource)) IN (${ph}) AND purchaseSource <> ?`,
+                    [src.canonical, ...src.aliases, src.canonical]);
+            }
+        } catch (e) { /* table may not exist yet on a brand-new DB */ }
+    }
+    if (fromV < 2) {
+        // v2 — drop the duplicate "Seethananda/seetha" mechanic (finding 20): it
+        // is redundant with the canonical "Seethananda" row + the 'seetha' alias
+        // in programme.js, and a latent double-count. Delete by name (id is not
+        // stable across DBs); daily_programme stores mechanic NAMES, so costing
+        // still resolves via the alias. Only remove it when the canonical exists.
+        try {
+            const dup = get(`SELECT id FROM mechanics WHERE LOWER(TRIM(name))='seethananda/seetha'`);
+            const canon = get(`SELECT id FROM mechanics WHERE LOWER(TRIM(name))='seethananda'`);
+            if (dup && canon && dup.id !== canon.id) run(`DELETE FROM mechanics WHERE id=?`, [dup.id]);
+        } catch (e) { /* mechanics table may not exist yet */ }
+    }
+    if (fromV < SCHEMA_VERSION) setUserVersion(SCHEMA_VERSION);
+
     return db;
 }
 
-module.exports = { db, ENGINE, DB_FILE, init, all, get, run, exec, transaction, toISO, nowISO };
+module.exports = { db, ENGINE, DB_FILE, init, all, get, run, exec, transaction, backup, toISO, nowISO };

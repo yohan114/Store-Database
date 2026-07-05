@@ -280,11 +280,11 @@ app.post('/api/jobcards/auto-link-mrns', auth.requireRole('ADMIN'), (req, res) =
     dbApi.transaction(() => {
         for (const it of rows) {
             const m = jobcards.findMatch(it.vehicleMachinery, it.reqDateISO);
-            if (m) { setItemJob(it.id, m.id); linked++; }
+            if (m) { setItemJob(it.id, m.id, 'EXACT'); linked++; }
         }
         for (const is of issues) {
             const m = jobcards.findMatch(is.vehicleMachinery, is.issueDateISO);
-            if (m) { setIssueJob(is.id, m.id); issuesLinked++; }
+            if (m) { setIssueJob(is.id, m.id, 'EXACT'); issuesLinked++; }
         }
     });
     res.json({ success: true, scanned: rows.length + issues.length, linked, issuesLinked });
@@ -319,8 +319,8 @@ app.post('/api/jobcards/:id/auto-link', (req, res) => {
     const issues = dbApi.all("SELECT id, vehicleMachinery FROM issues WHERE jobCardId IS NULL AND issueDateISO != '' AND issueDateISO >= ? AND issueDateISO <= ? AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", [w.lo, w.hi, like]).filter((r) => jobcards.vehSet(r.vehicleMachinery).includes(w.vn));
     let linked = 0, issuesLinked = 0;
     dbApi.transaction(() => {
-        for (const it of rows) { setItemJob(it.id, job.id); linked++; }
-        for (const is of issues) { setIssueJob(is.id, job.id); issuesLinked++; }
+        for (const it of rows) { setItemJob(it.id, job.id, 'EXACT'); linked++; }
+        for (const is of issues) { setIssueJob(is.id, job.id, 'EXACT'); issuesLinked++; }
     });
     res.json({ success: true, linked, issuesLinked });
 });
@@ -404,18 +404,21 @@ app.put('/api/mechanics/:id', (req, res) => {
 });
 
 // ---- Link MRNs (items) to job cards (parts cost) ---------------------------
-function setItemJob(itemId, jobCardId) {
-    if (!jobCardId) { dbApi.run('UPDATE items SET jobCardId=NULL, jobNo=NULL WHERE id=?', [itemId]); return null; }
+// method: how the link was made — 'MANUAL' | 'EXACT' (in-window) | 'NEAR'
+// (nearest guess) | 'CATCHALL' (per-vehicle bucket). gap: day distance, if known.
+// Recorded so low-confidence links are auditable/reversible (review finding 16).
+function setItemJob(itemId, jobCardId, method = 'MANUAL', gap = null) {
+    if (!jobCardId) { dbApi.run('UPDATE items SET jobCardId=NULL, jobNo=NULL, linkMethod=NULL, linkGap=NULL WHERE id=?', [itemId]); return null; }
     const j = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobCardId]);
     if (!j) return null;
-    dbApi.run('UPDATE items SET jobCardId=?, jobNo=? WHERE id=?', [jobCardId, j.jobNo, itemId]);
+    dbApi.run('UPDATE items SET jobCardId=?, jobNo=?, linkMethod=?, linkGap=? WHERE id=?', [jobCardId, j.jobNo, method, gap, itemId]);
     return j.jobNo;
 }
-function setIssueJob(issueId, jobCardId) {
-    if (!jobCardId) { dbApi.run('UPDATE issues SET jobCardId=NULL, jobNo=NULL WHERE id=?', [issueId]); return null; }
+function setIssueJob(issueId, jobCardId, method = 'MANUAL', gap = null) {
+    if (!jobCardId) { dbApi.run('UPDATE issues SET jobCardId=NULL, jobNo=NULL, linkMethod=NULL, linkGap=NULL WHERE id=?', [issueId]); return null; }
     const j = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobCardId]);
     if (!j) return null;
-    dbApi.run('UPDATE issues SET jobCardId=?, jobNo=? WHERE id=?', [jobCardId, j.jobNo, issueId]);
+    dbApi.run('UPDATE issues SET jobCardId=?, jobNo=?, linkMethod=?, linkGap=? WHERE id=?', [jobCardId, j.jobNo, method, gap, issueId]);
     return j.jobNo;
 }
 // Link every item line of an MRN number to a job card.
@@ -575,10 +578,10 @@ app.post('/api/items', (req, res) => {
         );
         // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
         let linkedJobNo = null;
-        if (b.jobCardId) linkedJobNo = setItemJob(r.lastInsertRowid, b.jobCardId);
+        if (b.jobCardId) linkedJobNo = setItemJob(r.lastInsertRowid, b.jobCardId, 'MANUAL');
         else {
             const m = jobcards.findMatch(s(b.vehicleMachinery), toISO(b.reqDate));
-            if (m) linkedJobNo = setItemJob(r.lastInsertRowid, m.id);
+            if (m) linkedJobNo = setItemJob(r.lastInsertRowid, m.id, 'EXACT');
         }
         res.json({ success: true, id: r.lastInsertRowid, category, jobNo: linkedJobNo });
     } catch (e) {
@@ -793,10 +796,10 @@ app.post('/api/issues', (req, res) => {
         );
         // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
         let issJobNo = null;
-        if (b.jobCardId) issJobNo = setIssueJob(r.lastInsertRowid, b.jobCardId);
+        if (b.jobCardId) issJobNo = setIssueJob(r.lastInsertRowid, b.jobCardId, 'MANUAL');
         else {
             const m = jobcards.findMatch(s(b.vehicleMachinery), toISO(b.issueDate));
-            if (m) issJobNo = setIssueJob(r.lastInsertRowid, m.id);
+            if (m) issJobNo = setIssueJob(r.lastInsertRowid, m.id, 'EXACT');
         }
         res.json({ success: true, id: r.lastInsertRowid, category, jobNo: issJobNo });
     } catch (e) {
@@ -1576,20 +1579,40 @@ app.listen(PORT, '0.0.0.0', () => {
     }
 });
 
+// --- Automatic backups: async (non-blocking) + tiered retention ------------
+// db.backup() is a consistent online copy that never freezes the event loop the
+// way copyFileSync did (review finding 19). Retention keeps recent granularity
+// without unbounded growth: every backup for 24 h, then one per day for 30 days.
+// Restore: stop the server, copy the chosen backups/inventory_backup_*.db over
+// inventory.db (delete any -wal/-shm sidecars first), restart. See docs/BACKUP_RESTORE.md.
 const BACKUP_DIR = path.join(__dirname, 'backups');
 const BACKUP_INTERVAL = 30 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+function pruneBackups() {
+    const files = fs.readdirSync(BACKUP_DIR)
+        .filter((f) => f.startsWith('inventory_backup_') && f.endsWith('.db'))
+        .map((f) => ({ f, m: fs.statSync(path.join(BACKUP_DIR, f)).mtime.getTime() }))
+        .sort((a, b) => b.m - a.m);
+    const now = Date.now();
+    const keptDays = new Set();
+    for (const { f, m } of files) {
+        const age = now - m;
+        if (age <= DAY_MS) continue;                      // keep everything < 24 h old
+        if (age > 30 * DAY_MS) { try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch (_) {} continue; }
+        const dayKey = Math.floor(m / DAY_MS);            // one per calendar day beyond 24 h
+        if (keptDays.has(dayKey)) { try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch (_) {} }
+        else keptDays.add(dayKey);
+    }
+}
 function runAutomaticBackup() {
     try {
         if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
-        try { dbApi.exec('PRAGMA wal_checkpoint(TRUNCATE);'); } catch (_) {}
+        if (!fs.existsSync(dbApi.DB_FILE)) return;
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const dest = path.join(BACKUP_DIR, `inventory_backup_${ts}.db`);
-        if (fs.existsSync(dbApi.DB_FILE)) {
-            fs.copyFileSync(dbApi.DB_FILE, dest);
-            const files = fs.readdirSync(BACKUP_DIR).filter(f => f.startsWith('inventory_backup_') && f.endsWith('.db'))
-                .map(f => ({ f, m: fs.statSync(path.join(BACKUP_DIR, f)).mtime })).sort((a, b) => b.m - a.m);
-            files.slice(48).forEach(({ f }) => { try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch (_) {} });
-        }
+        Promise.resolve(dbApi.backup(dest))
+            .then(() => { try { pruneBackups(); } catch (_) {} })
+            .catch((e) => console.error('[BACKUP] failed:', e.message));
     } catch (e) {
         console.error('[BACKUP] failed:', e.message);
     }

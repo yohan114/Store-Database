@@ -298,8 +298,8 @@ function list(q = {}) {
 function remove(id) {
     db.run('DELETE FROM job_audits WHERE jobCardId=?', [id]);
     try { db.run('DELETE FROM daily_programme WHERE jobCardId=?', [id]); } catch (_) {}
-    try { db.run('UPDATE items SET jobCardId=NULL, jobNo=NULL WHERE jobCardId=?', [id]); } catch (_) {}
-    try { db.run('UPDATE issues SET jobCardId=NULL, jobNo=NULL WHERE jobCardId=?', [id]); } catch (_) {}
+    try { db.run('UPDATE items SET jobCardId=NULL, jobNo=NULL, linkMethod=NULL, linkGap=NULL WHERE jobCardId=?', [id]); } catch (_) {}
+    try { db.run('UPDATE issues SET jobCardId=NULL, jobNo=NULL, linkMethod=NULL, linkGap=NULL WHERE jobCardId=?', [id]); } catch (_) {}
     db.run('DELETE FROM jobcards WHERE id=?', [id]);
     return { success: true };
 }

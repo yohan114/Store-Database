@@ -227,6 +227,48 @@ app.get('/api/portal/entities', (req, res) => {
     res.json({ system: 'workshop', generatedAt: new Date().toISOString(), machines, sites });
 });
 
+// Read-only month-scoped job-cost feed for the Master Portal's profit engine
+// (M5): each job card's labour and parts, attributed to a machine (ecdNo E&C
+// code) and project. Money returned in LKR cents. Token-authed.
+app.get('/api/portal/costs', (req, res) => {
+    const token = req.get('x-portal-token');
+    const expected = process.env.PORTAL_TOKEN;
+    if (!expected || !token || token !== expected) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const month = String(req.query.month || '');
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+        return res.status(400).json({ error: 'month=YYYY-MM required' });
+    }
+    const start = `${month}-01`;
+    const [y, mo] = month.split('-').map(Number);
+    const end = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, '0')}-01`;
+    const norm = (s) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+    const rows = dbApi.all(
+        `SELECT j.id, j.ecdNo, j.projectName, j.dateISO, j.labourCost,
+                COALESCE(p.c,0) AS partsCost, COALESCE(s.c,0) AS issuesCost
+         FROM jobcards j
+         LEFT JOIN (SELECT i.jobCardId AS jid, ${costing.RECEIVED_PARTS_SUM} AS c
+                    FROM items i JOIN receipts r ON r.itemId=i.id GROUP BY i.jobCardId) p ON p.jid=j.id
+         LEFT JOIN (SELECT s.jobCardId AS jid, ${costing.ISSUES_SUM} AS c
+                    FROM issues s GROUP BY s.jobCardId) s ON s.jid=j.id
+         WHERE COALESCE(j.dateISO,'') != '' AND j.dateISO >= ? AND j.dateISO < ?`,
+        [start, end]
+    );
+
+    const costs = [];
+    for (const j of rows) {
+        const code = norm(j.ecdNo) || null;
+        const site = (j.projectName || '').trim() || null;
+        const labour = Number(j.labourCost) || 0;
+        const parts = (Number(j.partsCost) || 0) + (Number(j.issuesCost) || 0);
+        if (labour > 0) costs.push({ sourceRef: `job-labour:${j.id}`, machineCode: code, siteRef: site, category: 'labour', amountCents: Math.round(labour * 100), occurredAt: j.dateISO });
+        if (parts > 0) costs.push({ sourceRef: `job-parts:${j.id}`, machineCode: code, siteRef: site, category: 'parts', amountCents: Math.round(parts * 100), occurredAt: j.dateISO });
+    }
+    res.json({ system: 'workshop', month, costs, income: [] });
+});
+
 // ---- Gate everything else behind authentication ---------------------------
 app.use('/api', auth.requireApiAuth);
 app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res) => {

@@ -156,7 +156,7 @@ app.get('/api/health', (req, res) => {
 // numbers always match the in-app dashboard. Never mutates.
 app.get('/api/portal/summary', (req, res) => {
     const token = req.get('x-portal-token');
-    const expected = process.env.PORTAL_TOKEN;
+    const expected = process.env.WORKSHOP_PORTAL_TOKEN || process.env.PORTAL_TOKEN;
     if (!expected || !token || token !== expected) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -183,7 +183,7 @@ app.get('/api/portal/summary', (req, res) => {
 // land in the portal's unmapped queue). Token-authed; mounted before the gate.
 app.get('/api/portal/entities', (req, res) => {
     const token = req.get('x-portal-token');
-    const expected = process.env.PORTAL_TOKEN;
+    const expected = process.env.WORKSHOP_PORTAL_TOKEN || process.env.PORTAL_TOKEN;
     if (!expected || !token || token !== expected) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -232,7 +232,7 @@ app.get('/api/portal/entities', (req, res) => {
 // code) and project. Money returned in LKR cents. Token-authed.
 app.get('/api/portal/costs', (req, res) => {
     const token = req.get('x-portal-token');
-    const expected = process.env.PORTAL_TOKEN;
+    const expected = process.env.WORKSHOP_PORTAL_TOKEN || process.env.PORTAL_TOKEN;
     if (!expected || !token || token !== expected) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -1721,13 +1721,20 @@ app.use((err, req, res, next) => {
 });
 
 // --- start + lightweight single-file backups -------------------------------
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Inventory Monitor running at http://localhost:${PORT}/item_tracker.html  (engine: ${dbApi.ENGINE})`);
-    const nets = os.networkInterfaces();
-    for (const name in nets) for (const iface of nets[name]) {
-        if (iface.family === 'IPv4' && !iface.internal) console.log(`  Network: http://${iface.address}:${PORT}`);
-    }
-});
+// Standalone: `node server.js` listens on its own port. Embedded (the unified
+// E&C server requires this file as a module): no listen here — the host server
+// mounts `app` and owns the socket. Backups below run in both modes.
+if (require.main === module) {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Inventory Monitor running at http://localhost:${PORT}/item_tracker.html  (engine: ${dbApi.ENGINE})`);
+        const nets = os.networkInterfaces();
+        for (const name in nets) for (const iface of nets[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) console.log(`  Network: http://${iface.address}:${PORT}`);
+        }
+    });
+}
+
+module.exports = app;
 
 // --- Automatic backups: async (non-blocking) + tiered retention ------------
 // db.backup() is a consistent online copy that never freezes the event loop the

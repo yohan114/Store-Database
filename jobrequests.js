@@ -140,7 +140,7 @@ function tryEmailOutsourced(req) {
     try {
         const mailer = require('./mailer');
         if (mailer && typeof mailer.sendOutsourced === 'function') return mailer.sendOutsourced(req);
-    } catch (_) { /* mailer not wired yet */ }
+    } catch (e) { console.error(`[JOBREQ] outsourced e-mail failed for ${req.reqNo}:`, e.message); }
     return null;
 }
 
@@ -172,7 +172,11 @@ function applyEffect(effect, req, user, note) {
                     vendorName: fresh.vendorName, expectedDate: fresh.neededBy,
                 }, user);
                 if (jc && jc.id) { db.run('UPDATE jobcards SET jobRequestId=? WHERE id=?', [req.id, jc.id]); set({ jobCardId: jc.id }); }
-            } catch (_) { /* job card is best-effort */ }
+            } catch (e) {
+                // Best-effort, but a silent failure hid a real data problem
+                // (review: swallowed data failures). Log so it is diagnosable.
+                console.error(`[JOBREQ] auto job-card creation failed for ${req.reqNo}:`, e.message);
+            }
             if (fresh.type === 'OUTSOURCED') { const sent = tryEmailOutsourced(get(req.id)); if (sent) set({ emailSentAt: nowISO() }); }
             notifications.notifyUser(req.requestedBy, get(req.id), `Your job request ${req.reqNo} is fully approved.`);
             break;

@@ -25,13 +25,14 @@
 const db = require('../db');
 const jobcards = require('../jobcards');
 const { buildJobIndex, findNearestJob } = require('./_jobmatch');
+const { NEAR_MAX_GAP_DAYS } = require('../config');
 
 const COMMIT = process.argv.includes('--commit');
 const CATCHALL = process.argv.includes('--catchall');
 const MAX_GAP = (() => {
     const a = process.argv.find((x) => x.startsWith('--max-gap='));
-    const n = a ? parseInt(a.split('=')[1], 10) : 60;
-    return Number.isFinite(n) && n >= 0 ? n : 60;
+    const n = a ? parseInt(a.split('=')[1], 10) : NEAR_MAX_GAP_DAYS;
+    return Number.isFinite(n) && n >= 0 ? n : NEAR_MAX_GAP_DAYS;
 })();
 const nowISO = () => new Date().toISOString();
 

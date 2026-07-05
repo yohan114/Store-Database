@@ -12,6 +12,7 @@
 
 const db = require('./db');
 const costing = require('./costing');
+const config = require('./config');
 const round2 = costing.round2;
 
 // Source taxonomy comes from costing.js (the single source of truth) so the
@@ -59,7 +60,7 @@ function splitByOrigin(f) {
     return out;
 }
 
-function dailySplit(f, limit = 60) {
+function dailySplit(f, limit = config.DASHBOARD_DAILY_LIMIT) {
     const w = receiptWhere(f);
     const rows = db.all(
         `SELECT r.deliveryDateISO AS day, ${ORIGIN_CASE} AS origin, SUM(r.qty*r.unitPrice) AS val
@@ -77,7 +78,7 @@ function dailySplit(f, limit = 60) {
 }
 
 // Month-by-month expense split for the last `limit` months (newest first).
-function monthlySplit(f, limit = 12) {
+function monthlySplit(f, limit = config.DASHBOARD_MONTHLY_LIMIT) {
     const w = receiptWhere(f);
     const rows = db.all(
         `SELECT SUBSTR(r.deliveryDateISO,1,7) AS month, ${ORIGIN_CASE} AS origin, SUM(r.qty*r.unitPrice) AS val
@@ -95,7 +96,7 @@ function monthlySplit(f, limit = 12) {
 }
 
 // Requests not yet fully delivered, split by where they were requested from.
-function pendingItems(f, limit = 100) {
+function pendingItems(f, limit = config.DASHBOARD_PENDING_LIMIT) {
     const where = [];
     const params = [];
     if (f.category) { where.push('i.category = ?'); params.push(f.category); }
@@ -120,7 +121,7 @@ function pendingItems(f, limit = 100) {
     return out;
 }
 
-function supplierSpend(f, limit = 12) {
+function supplierSpend(f, limit = config.DASHBOARD_SUPPLIER_LIMIT) {
     const w = receiptWhere(f);
     const rows = db.all(
         `SELECT COALESCE(NULLIF(TRIM(r.supplierName),''),'Unspecified') AS supplier, COALESCE(SUM(r.qty*r.unitPrice),0) AS spend

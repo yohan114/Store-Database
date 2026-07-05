@@ -15,6 +15,7 @@
 const db = require('./db');
 const programme = require('./programme');
 const costing = require('./costing');
+const config = require('./config');
 
 const STATUSES = ['OPEN', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CLOSED'];
 
@@ -32,7 +33,7 @@ const numOrNull = (v) => (v === null || v === undefined || v === '' || isNaN(Num
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 // --- vehicle + date matching (shared rule with tools/import_workshop.js) -----
-const WINDOW_DAYS = 2;
+const WINDOW_DAYS = config.WINDOW_DAYS;
 const normVeh = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
 function vehSet(v) {
     const parts = String(v || '').split(/[\/,]/).map(normVeh).filter(Boolean);

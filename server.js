@@ -20,6 +20,7 @@ const { toISO, nowISO } = dbApi;
 const { classify, CATEGORIES } = require('./categorize');
 const auth = require('./auth');
 const costing = require('./costing');
+const config = require('./config');
 const jobcards = require('./jobcards');
 const programme = require('./programme');
 const dashboard = require('./dashboard');
@@ -80,8 +81,8 @@ app.get('/login', (req, res) => {
 });
 
 // --- Login brute-force throttle (in-memory, per IP+username) ---------------
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;   // rolling window
-const LOGIN_MAX_FAILS = 8;                // fails before lockout
+const LOGIN_WINDOW_MS = config.LOGIN_WINDOW_MS;   // rolling window
+const LOGIN_MAX_FAILS = config.LOGIN_MAX_FAILS;   // fails before lockout
 const loginFails = new Map();             // key -> { count, until }
 function loginKey(req, username) { return `${req.ip || req.socket.remoteAddress || '?'}|${username}`; }
 function loginBlocked(key) { const e = loginFails.get(key); return e && e.until && e.until > Date.now(); }
@@ -169,6 +170,14 @@ app.get('/api/dashboard', (req, res) => {
 // Operations — job requests, notifications, users
 // ===========================================================================
 const svcErr = (res, out) => res.status(out.status || 500).json({ error: out.error });
+
+// Error taxonomy: throw AppError(status, message) for an *expected* failure whose
+// message is safe to show the client (400/403/404/409/429). Anything else is an
+// unexpected bug — the centralized handler (bottom of file) returns a generic 500
+// and logs the real detail instead of leaking it (review: error handling).
+class AppError extends Error {
+    constructor(status, message) { super(message); this.status = status; this.expose = true; }
+}
 
 app.get('/api/job-requests', (req, res) => {
     try { res.json(jobrequests.list(req.query, req.user)); }
@@ -1570,6 +1579,17 @@ app.post('/api/import/pdf', async (req, res) => {
     }
 });
 
+// Centralized error handler — the safety net for any throw that escapes a
+// route (Express routes sync throws here). Expected AppErrors show their
+// message + status; everything else is a logged 500 with a generic body so
+// internal detail / stack traces never reach the client.
+app.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    const status = (err && err.status) || 500;
+    if (status >= 500) console.error(`[ERR] ${req.method} ${req.originalUrl}:`, (err && err.stack) || err);
+    res.status(status).json({ error: (err && err.expose && err.message) ? err.message : 'Internal server error.' });
+});
+
 // --- start + lightweight single-file backups -------------------------------
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Inventory Monitor running at http://localhost:${PORT}/item_tracker.html  (engine: ${dbApi.ENGINE})`);
@@ -1586,7 +1606,7 @@ app.listen(PORT, '0.0.0.0', () => {
 // Restore: stop the server, copy the chosen backups/inventory_backup_*.db over
 // inventory.db (delete any -wal/-shm sidecars first), restart. See docs/BACKUP_RESTORE.md.
 const BACKUP_DIR = path.join(__dirname, 'backups');
-const BACKUP_INTERVAL = 30 * 60 * 1000;
+const BACKUP_INTERVAL = config.BACKUP_INTERVAL_MS;
 const DAY_MS = 24 * 60 * 60 * 1000;
 function pruneBackups() {
     const files = fs.readdirSync(BACKUP_DIR)
@@ -1597,8 +1617,8 @@ function pruneBackups() {
     const keptDays = new Set();
     for (const { f, m } of files) {
         const age = now - m;
-        if (age <= DAY_MS) continue;                      // keep everything < 24 h old
-        if (age > 30 * DAY_MS) { try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch (_) {} continue; }
+        if (age <= config.BACKUP_KEEP_ALL_MS) continue;   // keep everything < 24 h old
+        if (age > config.BACKUP_KEEP_DAILY_DAYS * DAY_MS) { try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch (_) {} continue; }
         const dayKey = Math.floor(m / DAY_MS);            // one per calendar day beyond 24 h
         if (keptDays.has(dayKey)) { try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch (_) {} }
         else keptDays.add(dayKey);

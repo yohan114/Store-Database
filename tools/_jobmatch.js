@@ -9,6 +9,7 @@
 
 const db = require('../db');
 const jobcards = require('../jobcards');
+const { WINDOW_DAYS } = require('../config');   // same claim window as the live matcher
 
 const DAY = 86400000;
 const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
@@ -22,8 +23,8 @@ function buildJobIndex() {
     const byVeh = new Map();
     for (const j of jobs) {
         const hiBase = (j.e && String(j.e).trim()) ? j.e : j.dateISO;
-        j._lo = addDays(j.dateISO, -2);
-        j._hi = addDays(hiBase, 2);
+        j._lo = addDays(j.dateISO, -WINDOW_DAYS);
+        j._hi = addDays(hiBase, WINDOW_DAYS);
         j._span = (new Date(j._hi) - new Date(j._lo)) / DAY;
         for (const v of jobcards.vehSet(j.v)) {
             if (!byVeh.has(v)) byVeh.set(v, []);

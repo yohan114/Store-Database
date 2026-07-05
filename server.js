@@ -51,14 +51,36 @@ app.get('/login', (req, res) => {
     res.sendFile(path.join(__dirname, 'login.html'));
 });
 
+// --- Login brute-force throttle (in-memory, per IP+username) ---------------
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;   // rolling window
+const LOGIN_MAX_FAILS = 8;                // fails before lockout
+const loginFails = new Map();             // key -> { count, until }
+function loginKey(req, username) { return `${req.ip || req.socket.remoteAddress || '?'}|${username}`; }
+function loginBlocked(key) { const e = loginFails.get(key); return e && e.until && e.until > Date.now(); }
+function noteLoginFail(key) {
+    const now = Date.now();
+    const e = loginFails.get(key) || { count: 0, until: 0 };
+    e.count = (e.until && e.until > now ? e.count : 0) + 1;   // reset count after a lapsed window
+    if (e.count >= LOGIN_MAX_FAILS) { e.until = now + LOGIN_WINDOW_MS; e.count = 0; }
+    else { e.until = now + LOGIN_WINDOW_MS; }
+    loginFails.set(key, e);
+}
+
 app.post('/api/login', (req, res) => {
     const username = String((req.body && req.body.username) || '').trim().toLowerCase();
     const password = String((req.body && req.body.password) || '');
     if (!username || !password) return res.status(400).json({ error: 'Username and password are required.' });
+    const key = loginKey(req, username);
+    if (loginBlocked(key)) {
+        console.warn(`[AUTH] login locked out for ${key}`);
+        return res.status(429).json({ error: 'Too many failed attempts. Please wait a few minutes and try again.' });
+    }
     const user = dbApi.get('SELECT * FROM users WHERE LOWER(username)=? AND active=1', [username]);
     if (!user || !auth.verifyPassword(password, user.passwordSalt, user.passwordHash)) {
+        noteLoginFail(key);
         return res.status(401).json({ error: 'Invalid username or password.' });
     }
+    loginFails.delete(key);   // clear on success
     auth.createSession(res, user.id);
     res.json({ success: true, user: auth.publicUser(user) });
 });
@@ -129,7 +151,8 @@ app.get('/api/job-requests/meta', (req, res) => {
         statuses: jobrequests.STATUSES, statusLabels: jobrequests.STATUS_LABELS,
         canCreate: jobrequests.canCreate(req.user), roleLabels: auth.ROLE_LABELS,
         directory: users.directory(),
-        standingCc: (dbApi.get(`SELECT value FROM app_settings WHERE key='standingCc'`) || {}).value || '',
+        // standingCc intentionally omitted — it is ADMIN-only and served from
+        // the gated /api/settings/standing-cc endpoint instead.
     });
 });
 app.post('/api/job-requests', (req, res) => {
@@ -172,15 +195,15 @@ app.post('/api/users/:id/reset-password', auth.requireRole('ADMIN'), (req, res) 
 });
 
 // Standing CC list for outsourced e-mails (ADMIN)
-app.get('/api/settings/standing-cc', (req, res) => res.json({ standingCc: (dbApi.get(`SELECT value FROM app_settings WHERE key='standingCc'`) || {}).value || '' }));
+app.get('/api/settings/standing-cc', auth.requireRole('ADMIN'), (req, res) => res.json({ standingCc: (dbApi.get(`SELECT value FROM app_settings WHERE key='standingCc'`) || {}).value || '' }));
 app.post('/api/settings/standing-cc', auth.requireRole('ADMIN'), (req, res) => {
     const v = String((req.body || {}).standingCc || '').trim();
     dbApi.run(`INSERT INTO app_settings (key,value) VALUES ('standingCc',?) ON CONFLICT(key) DO UPDATE SET value=?`, [v, v]);
     res.json({ success: true, standingCc: v });
 });
 
-// Outbox (e-mail log)
-app.get('/api/outbox', (req, res) => res.json({ outbox: dbApi.all('SELECT * FROM outbox ORDER BY id DESC LIMIT 200') }));
+// Outbox (e-mail log) — ADMIN only (contains vendor communications).
+app.get('/api/outbox', auth.requireRole('ADMIN'), (req, res) => res.json({ outbox: dbApi.all('SELECT * FROM outbox ORDER BY id DESC LIMIT 200') }));
 
 // ---- Lightweight change signature for client polling ------------------------
 // The UI polls this tiny endpoint instead of re-downloading the whole dataset;
@@ -551,14 +574,10 @@ app.put('/api/items/:id', (req, res) => {
     }
 });
 
-// Middleware to verify deletion password
-const verifyDeletePassword = (req, res, next) => {
-    const password = req.headers['x-delete-password'] || req.query.password;
-    if (password !== 'E&CWorkshop') {
-        return res.status(403).json({ error: 'Unauthorized: Incorrect delete password.' });
-    }
-    next();
-};
+// Destructive deletes require the ADMIN role (real authorization). This
+// replaces the old shared 'delete password' — a constant that shipped in the
+// client bundle and provided no real protection.
+const verifyDeletePassword = auth.requireRole('ADMIN');
 
 // 4. DELETE /api/items/:id  (cascades receipts)
 app.delete('/api/items/:id', verifyDeletePassword, (req, res) => {

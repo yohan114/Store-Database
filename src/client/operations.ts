@@ -267,7 +267,12 @@ function renderOpsAdmin() {
             <div id="opsOutbox" class="space-y-1.5 text-xs max-h-56 overflow-y-auto"></div>
         </div>`;
     opLoadUsers(); opLoadOutbox();
-    const cc = document.getElementById('opsStandingCc') as any; if (cc) cc.value = (opsMeta && opsMeta.standingCc) || '';
+    // Standing CC is ADMIN-only info; fetch it from the gated settings endpoint
+    // (it is deliberately not exposed on the public /meta payload).
+    opJSON('/api/settings/standing-cc').then(({ ok, body }) => {
+        const cc = document.getElementById('opsStandingCc') as any;
+        if (cc && ok) cc.value = (body && body.standingCc) || '';
+    });
 }
 async function opLoadUsers() {
     const { body } = await opJSON('/api/users'); const mount = document.getElementById('opsUsersList'); if (!mount) return;
@@ -304,6 +309,5 @@ async function opResetPwd(id) {
 async function opSaveStandingCc() {
     const v = (document.getElementById('opsStandingCc') as any).value.trim();
     const { ok } = await opJSON('/api/settings/standing-cc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ standingCc: v }) });
-    if (ok && opsMeta) opsMeta.standingCc = v;
     alert(ok ? 'Saved.' : 'Failed.');
 }

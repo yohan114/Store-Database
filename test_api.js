@@ -1,9 +1,23 @@
 // Self-contained API test: boots the server on a fresh port, exercises every
 // endpoint via fetch, prints a report, then exits. No shell sleep / no lingering process.
-process.env.PORT = '4173';
+//
+// Runs against a DISPOSABLE COPY of inventory.db (never the live/committed DB),
+// so a crashed test can't leave orphan rows in production data. In CI where no
+// inventory.db exists yet, `npm run migrate` builds one first.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const SRC_DB = process.env.SRC_INVENTORY_DB || path.join(__dirname, 'inventory.db');
+const TEST_DB = path.join(os.tmpdir(), `test_inventory_${process.pid}.db`);
+if (fs.existsSync(SRC_DB)) fs.copyFileSync(SRC_DB, TEST_DB);
+process.env.INVENTORY_DB = TEST_DB;
+const cleanupTestDb = () => { for (const s of ['', '-wal', '-shm']) { try { fs.unlinkSync(TEST_DB + s); } catch (_) {} } };
+process.on('exit', cleanupTestDb);
+
+process.env.PORT = process.env.PORT || '4173';
 require('./server.js');
 
-const BASE = 'http://localhost:4173';
+const BASE = `http://localhost:${process.env.PORT}`;
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 const j = async (res) => ({ status: res.status, body: await res.json().catch(() => null) });
 let pass = 0, fail = 0;
@@ -90,9 +104,9 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ok(issList[0].qty === 9 && issList[0].issuedTo === 'Site B', 'PUT /api/issues updates');
 
     // DELETE everything we created
-    let { body: dIss } = await j(await fetch(BASE + '/api/issues/' + issId, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
-    let { body: dRec } = await j(await fetch(BASE + '/api/receipts/' + recId + '?password=E%26CWorkshop', { method: 'DELETE' }));
-    let { body: dItem } = await j(await fetch(BASE + '/api/items/' + itemId + '?password=E%26CWorkshop', { method: 'DELETE' }));
+    let { body: dIss } = await j(await fetch(BASE + '/api/issues/' + issId, { method: 'DELETE' }));
+    let { body: dRec } = await j(await fetch(BASE + '/api/receipts/' + recId + '', { method: 'DELETE' }));
+    let { body: dItem } = await j(await fetch(BASE + '/api/items/' + itemId + '', { method: 'DELETE' }));
     ok(dIss.success && dRec.success && dItem.success, 'DELETE issue/receipt/item');
 
     // confirm cleanup
@@ -150,8 +164,8 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     { const r = await fetch(BASE + '/js/app.js'); ok(r.status === 200 && (await r.text()).includes('DatabaseSync'), 'authenticated /js/app.js serves the compiled app'); }
 
     // cleanup this block
-    await j(await fetch(BASE + '/api/issues/' + okIss.id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
-    await j(await fetch(BASE + '/api/items/' + rsId + '?password=E%26CWorkshop', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/issues/' + okIss.id, { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/items/' + rsId + '', { method: 'DELETE' }));
     ({ body: page } = await j(await fetch(BASE + '/api/items?page=1&limit=1&search=TEST-RS-1')));
     ok(page.total === 0, 'request-source test cleanup verified');
 
@@ -282,12 +296,10 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
 
     // 11. Delete battery records (cleanup)
     let { status: bDel1Status } = await j(await fetch(BASE + '/api/batteries/' + bat1Id, {
-        method: 'DELETE',
-        headers: { 'x-delete-password': 'E&CWorkshop' }
+        method: 'DELETE'
     }));
     let { status: bDel2Status } = await j(await fetch(BASE + '/api/batteries/' + bat2Id, {
-        method: 'DELETE',
-        headers: { 'x-delete-password': 'E&CWorkshop' }
+        method: 'DELETE'
     }));
     ok(bDel1Status === 200 && bDel2Status === 200, 'DELETE batteries clean up');
 
@@ -346,18 +358,17 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     }));
     ok(mtUpdStatus === 200 && mtUpd.success && mtUpd.category === 'Consumables', 'Update transfer details with manual category override');
 
-    // 5. Delete transfer without password (should fail)
-    let { status: mtDelFailStatus } = await j(await fetch(BASE + '/api/transfers/' + transferId, {
-        method: 'DELETE'
-    }));
-    ok(mtDelFailStatus === 401 || mtDelFailStatus === 403, 'DELETE transfer without password fails');
+    // 5. Delete requires the ADMIN role — a non-admin session is rejected (403)
+    const cNonAdmin = await (async () => {
+        const r = await _fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'transport', password: 'changeme123' }) });
+        const sc = r.headers.get('set-cookie'); return sc ? sc.split(';')[0] : '';
+    })();
+    let { status: mtDelFailStatus } = await j(await _fetch(BASE + '/api/transfers/' + transferId, { method: 'DELETE', headers: { Cookie: cNonAdmin } }));
+    ok(mtDelFailStatus === 403, 'DELETE transfer as non-admin is forbidden (403)');
 
-    // 6. Delete transfer with correct password (should succeed)
-    let { status: mtDelSuccessStatus } = await j(await fetch(BASE + '/api/transfers/' + transferId, {
-        method: 'DELETE',
-        headers: { 'x-delete-password': 'E&CWorkshop' }
-    }));
-    ok(mtDelSuccessStatus === 200, 'DELETE transfer with password succeeds');
+    // 6. Delete as ADMIN succeeds (no shared password needed)
+    let { status: mtDelSuccessStatus } = await j(await fetch(BASE + '/api/transfers/' + transferId, { method: 'DELETE' }));
+    ok(mtDelSuccessStatus === 200, 'DELETE transfer as admin succeeds');
 
     // 7. Verify deletion
     let { status: mtGoneStatus } = await j(await fetch(BASE + '/api/transfers/' + transferId));
@@ -399,7 +410,7 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ({ body: jcGet } = await j(await fetch(BASE + '/api/jobcards/' + jcId)));
     ok(jcGet.issuesCost === 100 && jcGet.partsCost === 600 && jcGet.totalCost === 7000,
         'priced issue rolls into job cost (issued 4×25=100; parts 600; total 6400+600=7000)', 'total=' + jcGet.totalCost);
-    await j(await fetch(BASE + '/api/issues/' + jcIssue.id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    await j(await fetch(BASE + '/api/issues/' + jcIssue.id, { method: 'DELETE' }));
 
     let { body: dash } = await j(await fetch(BASE + '/api/dashboard'));
     ok(typeof dash.spend.mtd === 'number' && typeof dash.spend.ytd === 'number' && !!dash.received && Array.isArray(dash.suppliers) && !!dash.jobs, 'GET /api/dashboard returns spend/received/suppliers/jobs');
@@ -412,8 +423,8 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
 
     // cleanup
     await j(await fetch(BASE + '/api/programme/' + dpId, { method: 'DELETE' }));
-    await j(await fetch(BASE + '/api/items/' + mItem.id + '?password=E%26CWorkshop', { method: 'DELETE' }));
-    await j(await fetch(BASE + '/api/jobcards/' + jcId, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    await j(await fetch(BASE + '/api/items/' + mItem.id + '', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/jobcards/' + jcId, { method: 'DELETE' }));
     let { status: goneSt } = await j(await fetch(BASE + '/api/jobcards/' + jcId));
     ok(goneSt === 404, 'job card cleanup verified');
 
@@ -468,13 +479,13 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ok((alD3.linkedIssues || []).some((x) => x.id === issInId) && alD3.issuesCount >= 1, 'job linkedIssues includes the issued item');
 
     // cleanup
-    await j(await fetch(BASE + '/api/issues/' + issInId + '?password=E%26CWorkshop', { method: 'DELETE' }));
-    await j(await fetch(BASE + '/api/items/' + aiInId + '?password=E%26CWorkshop', { method: 'DELETE' }));
-    await j(await fetch(BASE + '/api/items/' + aiOutId + '?password=E%26CWorkshop', { method: 'DELETE' }));
-    await j(await fetch(BASE + '/api/jobcards/' + alJobId, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
-    await j(await fetch(BASE + '/api/jobcards/' + alJob2.jobcard.id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    await j(await fetch(BASE + '/api/issues/' + issInId + '', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/items/' + aiInId + '', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/items/' + aiOutId + '', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/jobcards/' + alJobId, { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/jobcards/' + alJob2.jobcard.id, { method: 'DELETE' }));
     let { body: dwList } = await j(await fetch(BASE + '/api/jobcards?search=DW-ZZAUTO-X&limit=1'));
-    if (dwList.jobcards && dwList.jobcards[0]) await j(await fetch(BASE + '/api/jobcards/' + dwList.jobcards[0].id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    if (dwList.jobcards && dwList.jobcards[0]) await j(await fetch(BASE + '/api/jobcards/' + dwList.jobcards[0].id, { method: 'DELETE' }));
     ok(true, 'auto-link test cleanup done');
 
     // === OPERATIONS: job-request approval workflow ===
@@ -528,6 +539,29 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     const mail = (ob.outbox || []).find((m) => m.reqNo === orr.body.request.reqNo);
     ok(!!mail && mail.toAddr === 'abc@vendor.lk' && /ops@enc.lk/.test(mail.cc || ''), 'outsourced approval e-mails vendor + standing CC (outbox)', 'status=' + (mail && mail.status));
 
+    // P0.4 — outbox + standing-cc settings are ADMIN-gated
+    ok((await jr(cTO, '/api/outbox')).status === 403, 'non-admin cannot read outbox (403)');
+    ok((await jr(cTO, '/api/settings/standing-cc')).status === 403, 'non-admin cannot read standing CC (403)');
+    // P0.4 — the standing CC is not leaked on the public meta payload
+    ok((await jr(cTO, '/api/job-requests/meta')).body.standingCc === undefined, 'standing CC absent from public /meta');
+    // P0.4 — MIME builder strips CR/LF header injection (Bcc smuggle attempt)
+    {
+        const mailer = require('./mailer.js');
+        const mime = mailer.buildMime({ from: 'a@enc.lk', to: 'victim@x.lk\r\nBcc: evil@attacker.lk', cc: [], subject: 'Hi\r\nX-Injected: yes', text: 'body' });
+        // The injection is neutralised if no *line* begins with a smuggled header
+        // (the literal text may survive folded into a value, but not as a header).
+        const injectedHeader = mime.split('\r\n').some((l) => /^(Bcc|X-Injected):/i.test(l));
+        ok(!injectedHeader, 'buildMime strips CRLF header injection');
+        ok(mailer.splitEmails('good@x.lk, bad\r\nBcc: z@y.lk, also@z.lk').length === 2, 'splitEmails drops CRLF-injected addresses');
+    }
+    // P0.4 — login rate limiting: a throwaway username locks out after LOGIN_MAX_FAILS (8)
+    {
+        const attempt = () => _fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'rl-nobody', password: 'wrong' }) });
+        let last = 401;
+        for (let i = 0; i < 9; i++) last = (await attempt()).status;   // 8 to trip, 9th is blocked
+        ok(last === 429, 'login locks out (429) after repeated failures', 'status=' + last);
+    }
+
     // Users admin (ADMIN only)
     let { status: uForbidden } = await jr(cTO, '/api/users');
     ok(uForbidden === 403, 'non-admin cannot list users (403)');
@@ -537,7 +571,7 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     // cleanup the two test requests + spawned job card
     await jr(COOKIE ? COOKIE : cTO, `/api/job-requests/${reqId}`, { method: 'DELETE', headers: { Cookie: COOKIE } });
     await jr(COOKIE, `/api/job-requests/${oId}`, { method: 'DELETE', headers: { Cookie: COOKIE } });
-    if (spawnedJobCard) await j(await fetch(BASE + '/api/jobcards/' + spawnedJobCard, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    if (spawnedJobCard) await j(await fetch(BASE + '/api/jobcards/' + spawnedJobCard, { method: 'DELETE' }));
     ok(true, 'operations test cleanup done');
 
     console.log(`\n${pass} passed, ${fail} failed`);

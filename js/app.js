@@ -416,16 +416,21 @@ function toggleSort(col) {
     }
     fetchTrackerPage();
 }
-// Highlight matching query helper
+// Highlight matching query helper.
+// SECURITY: HTML-escape the source text FIRST, then wrap matches — the
+// result is injected via innerHTML, so raw data here would be stored XSS.
 function highlightMatch(text, query) {
     if (text === null || text === undefined)
         return '-';
-    const textStr = String(text);
+    const safe = escapeHtml(String(text));
     if (!query)
-        return textStr || '-';
-    const escapedQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        return safe || '-';
+    // Escape the query for HTML too, then for regex, so it matches the escaped text.
+    const escapedQuery = escapeHtml(String(query)).replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    if (!escapedQuery)
+        return safe || '-';
     const regex = new RegExp(`(${escapedQuery})`, 'gi');
-    return textStr.replace(regex, '<span class="search-highlight">$1</span>');
+    return safe.replace(regex, '<span class="search-highlight">$1</span>') || '-';
 }
 // Get sorted indicator text
 function updateHeaderSortIndicators() {
@@ -1016,8 +1021,8 @@ function handleIssueItemSelection(itemId) {
     // We can show details in the metadata box
     metaContainer.innerHTML = `
                 <div class="space-y-1 w-full text-xs font-semibold">
-                    <div>Machinery: <strong class="text-slate-800 dark:text-white font-extrabold">${item.vehicleMachinery}</strong></div>
-                    <div>Item Name: <strong class="text-slate-800 dark:text-white font-extrabold">${item.name}</strong></div>
+                    <div>Machinery: <strong class="text-slate-800 dark:text-white font-extrabold">${escapeHtml(item.vehicleMachinery)}</strong></div>
+                    <div>Item Name: <strong class="text-slate-800 dark:text-white font-extrabold">${escapeHtml(item.name)}</strong></div>
                     <div>Fulfillment Status: <strong class="text-indigo-650 dark:text-indigo-400 font-extrabold">${item.recQty || 0} received of ${item.reqQty} requested</strong></div>
                     <div class="text-[10px] text-slate-450 dark:text-slate-500 font-medium">Requisition opened: ${item.reqDate}</div>
                 </div>
@@ -1062,19 +1067,11 @@ function handleIssueFilterChange() {
     }, 250);
 }
 async function deleteIssue(id) {
-    const password = prompt('Please enter the password to confirm deletion:');
-    if (password === null)
-        return;
-    if (password !== 'E&CWorkshop') {
-        alert('Incorrect password! Deletion cancelled.');
-        return;
-    }
     if (!confirm('Delete this issued item record permanently?'))
         return;
     try {
         const res = await fetch('/api/issues/' + id, {
-            method: 'DELETE',
-            headers: { 'x-delete-password': password }
+            method: 'DELETE'
         });
         if (!res.ok)
             throw new Error('failed');
@@ -1494,7 +1491,7 @@ function openInventoryOffcanvas(cleanName) {
                                     <div class="font-extrabold text-indigo-650 dark:text-indigo-400">Issued ${is.qty}</div>
                                     <div class="text-[10px] text-slate-455 dark:text-slate-500 font-medium">Machine: <strong class="text-slate-700 dark:text-slate-350">${escapeHtml(is.vehicleMachinery)}</strong></div>
                                 </div>
-                                <span class="text-[9px] font-black text-slate-400 dark:text-slate-505">${is.issueDate}</span>
+                                <span class="text-[9px] font-black text-slate-400 dark:text-slate-505">${escapeHtml(is.issueDate)}</span>
                             </div>
                             <div class="flex flex-wrap gap-2 items-center text-[9px] text-slate-500 mt-2">
                                 ${mrnPart}
@@ -1641,16 +1638,16 @@ function renderTable() {
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="text-sm font-extrabold text-slate-900 dark:text-white">${highlightMatch(item.mrnNum, searchQuery)}</div>
                             <div class="text-xs text-slate-500 dark:text-slate-455 font-semibold mt-0.5">${highlightMatch(item.vehicleMachinery, searchQuery)}</div>
-                            ${item.requestSource ? `<div class="mt-1.5"><span class="inline-flex items-center text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md border ${item.requestSource === 'Head Office' ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-900/30' : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/30'}">${item.requestSource}</span></div>` : ''}
+                            ${item.requestSource ? `<div class="mt-1.5"><span class="inline-flex items-center text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md border ${item.requestSource === 'Head Office' ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-900/30' : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/30'}">${escapeHtml(item.requestSource)}</span></div>` : ''}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="text-sm font-bold text-slate-800 dark:text-slate-250">${highlightMatch(item.name, searchQuery)}</div>
-                            <div class="text-xs text-slate-400 dark:text-slate-500 font-medium truncate max-w-[155px] mt-0.5" title="${item.itemDesc || ''}">${highlightMatch(item.itemDesc, searchQuery)}</div>
-                            ${item.category ? `<div class="mt-1.5"><span class="inline-flex items-center text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md border ${categoryBadgeClass(item.category)}">${item.category}</span></div>` : ''}
+                            <div class="text-xs text-slate-400 dark:text-slate-500 font-medium truncate max-w-[155px] mt-0.5" title="${escapeHtml(item.itemDesc || '')}">${highlightMatch(item.itemDesc, searchQuery)}</div>
+                            ${item.category ? `<div class="mt-1.5"><span class="inline-flex items-center text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md border ${categoryBadgeClass(item.category)}">${escapeHtml(item.category)}</span></div>` : ''}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="text-sm font-extrabold text-slate-900 dark:text-white">${item.reqQty}</div>
-                            <div class="text-xs text-slate-400 dark:text-slate-550 font-semibold mt-0.5">${item.reqDate}</div>
+                            <div class="text-xs text-slate-400 dark:text-slate-550 font-semibold mt-0.5">${escapeHtml(item.reqDate)}</div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="text-sm font-extrabold text-slate-800 dark:text-slate-200">${item.recQty > 0 ? item.recQty : '0'} <span class="text-xs text-slate-450 dark:text-slate-600 font-normal">of ${item.reqQty}</span></div>
@@ -1660,8 +1657,8 @@ function renderTable() {
                                 </div>
                                 <span class="text-[9px] font-black ${textColor}">${percent}%</span>
                             </div>
-                            <div class="text-[10px] text-slate-450 dark:text-slate-550 font-semibold mt-1.5">${item.recDate || 'Not received'} ${item.receipts && item.receipts.length > 1 ? `(${item.receipts.length} deliveries)` : ''}</div>
-                            ${item.purchaseSource ? `<div class="text-[9px] uppercase tracking-widest mt-1.5 font-extrabold text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100/50 dark:border-indigo-900/30 px-2 py-0.5 rounded-md w-fit">${item.purchaseSource}</div>` : ''}
+                            <div class="text-[10px] text-slate-450 dark:text-slate-550 font-semibold mt-1.5">${escapeHtml(item.recDate || 'Not received')} ${item.receipts && item.receipts.length > 1 ? `(${item.receipts.length} deliveries)` : ''}</div>
+                            ${item.purchaseSource ? `<div class="text-[9px] uppercase tracking-widest mt-1.5 font-extrabold text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100/50 dark:border-indigo-900/30 px-2 py-0.5 rounded-md w-fit">${escapeHtml(item.purchaseSource)}</div>` : ''}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold">
                             <div class="mb-0.5">${qtyGapHtml}</div>
@@ -1828,11 +1825,11 @@ function renderOpenMrns() {
         const data = openMrns[mrn];
         const isSelected = searchQuery.toLowerCase() === mrn.toLowerCase();
         return `
-                    <button onclick="filterByOpenMrn('${mrn}')" 
+                    <button onclick="filterByOpenMrn(this.dataset.mrn)" data-mrn="${escapeHtml(mrn)}"
                         class="w-full flex items-center justify-between p-3 rounded-xl border transition shadow-sm ${isSelected ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-900/50 ring-1 ring-indigo-300' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-900 hover:shadow-glow'} text-left outline-none">
                         <div class="overflow-hidden pr-2">
-                            <div class="text-sm font-extrabold text-slate-800 dark:text-white truncate">${mrn}</div>
-                            <div class="text-[10px] font-bold text-slate-500 dark:text-slate-450 truncate mt-0.5">${data.vehicle || '-'}</div>
+                            <div class="text-sm font-extrabold text-slate-800 dark:text-white truncate">${escapeHtml(mrn)}</div>
+                            <div class="text-[10px] font-bold text-slate-500 dark:text-slate-450 truncate mt-0.5">${escapeHtml(data.vehicle || '-')}</div>
                         </div>
                         <span class="shrink-0 inline-flex items-center justify-center px-2 py-0.5 bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 text-[10px] font-black rounded-full border border-amber-200/40">
                             ${data.count}
@@ -1893,7 +1890,7 @@ function renderPricingSummary() {
                 return `
                                 <div class="bg-slate-50 dark:bg-slate-950/40 rounded-2xl p-4 border border-slate-150 dark:border-slate-800 shadow-sm flex flex-col justify-between">
                                     <div class="flex justify-between items-start gap-2 mb-2">
-                                        <span class="text-sm font-bold text-slate-800 dark:text-slate-200 truncate" title="${name}">${name}</span>
+                                        <span class="text-sm font-bold text-slate-800 dark:text-slate-200 truncate" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
                                         <span class="text-sm font-extrabold text-slate-900 dark:text-white whitespace-nowrap">${formatCurrency(Math.round(amount * 100) / 100)}</span>
                                     </div>
                                     <div>
@@ -2035,7 +2032,7 @@ function renderDashboardTransfers() {
                         <div class="flex flex-col gap-2">
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-655 dark:text-slate-350 text-[10px] font-extrabold rounded-md font-mono">${escapeHtml(t.mtnNum)}</span>
-                                <span class="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold">${t.transferDate || ''}</span>
+                                <span class="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold">${escapeHtml(t.transferDate || '')}</span>
                                 ${catBadge}
                             </div>
                             <div class="text-sm font-extrabold text-slate-800 dark:text-slate-200">
@@ -2090,12 +2087,12 @@ function renderDashboard() {
     urgentBody.innerHTML = overdue.map(item => `
                 <tr class="hover:bg-rose-50/10 dark:hover:bg-rose-950/5 transition">
                     <td class="py-4 font-bold text-slate-800 dark:text-slate-200">
-                        <div class="text-sm font-extrabold">${item.mrnNum}</div>
-                        <div class="text-xs text-rose-500 font-semibold mt-0.5">${item.vehicleMachinery}</div>
+                        <div class="text-sm font-extrabold">${escapeHtml(item.mrnNum)}</div>
+                        <div class="text-xs text-rose-500 font-semibold mt-0.5">${escapeHtml(item.vehicleMachinery)}</div>
                     </td>
                     <td class="py-4">
-                        <div class="text-sm font-semibold">${item.name}</div>
-                        <div class="text-[11px] text-slate-450 dark:text-slate-500 mt-0.5">${item.itemDesc || '-'}</div>
+                        <div class="text-sm font-semibold">${escapeHtml(item.name)}</div>
+                        <div class="text-[11px] text-slate-450 dark:text-slate-500 mt-0.5">${escapeHtml(item.itemDesc || '-')}</div>
                     </td>
                     <td class="py-4 text-xs font-semibold text-rose-600 dark:text-rose-400">
                         ${item.reqDate}
@@ -2411,7 +2408,7 @@ function renderVehicleOffcanvasData() {
                                 <div class="flex justify-between items-start gap-2 mb-2">
                                     <div>
                                         <div class="text-sm font-bold text-slate-800 dark:text-slate-200">${escapeHtml(item.name)}</div>
-                                        <div class="text-[10px] text-slate-450 dark:text-slate-550 font-medium truncate max-w-[280px]" title="${item.itemDesc || ''}">${escapeHtml(item.itemDesc) || 'No description'}</div>
+                                        <div class="text-[10px] text-slate-450 dark:text-slate-550 font-medium truncate max-w-[280px]" title="${escapeHtml(item.itemDesc || '')}">${escapeHtml(item.itemDesc) || 'No description'}</div>
                                     </div>
                                     <span class="text-xs font-black text-amber-500 whitespace-nowrap bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1 rounded-lg border border-amber-100 dark:border-amber-900/30">${balance} Pending</span>
                                 </div>
@@ -2448,7 +2445,7 @@ function renderVehicleOffcanvasData() {
                                 <div class="flex justify-between items-start gap-2 mb-2">
                                     <div>
                                         <div class="text-sm font-bold text-slate-800 dark:text-slate-200">${escapeHtml(item.name)}</div>
-                                        <div class="text-[10px] text-slate-450 dark:text-slate-550 font-medium">MRN Ref: <strong class="text-indigo-650 dark:text-indigo-400">${item.mrnNum}</strong></div>
+                                        <div class="text-[10px] text-slate-450 dark:text-slate-550 font-medium">MRN Ref: <strong class="text-indigo-650 dark:text-indigo-400">${escapeHtml(item.mrnNum)}</strong></div>
                                     </div>
                                     <span class="text-xs font-black text-indigo-600 dark:text-indigo-400 whitespace-nowrap bg-indigo-50 dark:bg-indigo-950/40 px-2.5 py-1 rounded-lg border border-indigo-100 dark:border-indigo-900/30">${storeStock} in Stock</span>
                                 </div>
@@ -2480,7 +2477,7 @@ function renderVehicleOffcanvasData() {
                             <div>
                                 <div class="flex justify-between items-center w-full mb-2">
                                     <span class="font-extrabold text-indigo-650 dark:text-indigo-400 text-sm">Issued ${is.qty} units</span>
-                                    <span class="px-2 py-0.5 bg-white dark:bg-slate-850 text-[9px] font-black uppercase text-slate-500 rounded border border-slate-200 dark:border-slate-800">${is.issueDate}</span>
+                                    <span class="px-2 py-0.5 bg-white dark:bg-slate-850 text-[9px] font-black uppercase text-slate-500 rounded border border-slate-200 dark:border-slate-800">${escapeHtml(is.issueDate)}</span>
                                 </div>
                                 <div class="font-extrabold text-slate-800 dark:text-slate-250 text-sm mb-1">${escapeHtml(is.itemName)}</div>
                                 ${is.itemDesc ? `<div class="text-[10px] text-slate-450 dark:text-slate-550 font-medium mb-2">${escapeHtml(is.itemDesc)}</div>` : ''}
@@ -2591,12 +2588,12 @@ function handleReceivingItemSelection(itemId) {
     }
     const dateGapInfo = item.recDate ? `(Last delivery on ${item.recDate})` : '(No deliveries logged yet)';
     const reqSrcBadge = item.requestSource
-        ? `<div>Requested From: <strong class="${item.requestSource === 'Head Office' ? 'text-indigo-650 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'} font-extrabold">${item.requestSource}</strong></div>`
+        ? `<div>Requested From: <strong class="${item.requestSource === 'Head Office' ? 'text-indigo-650 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'} font-extrabold">${escapeHtml(item.requestSource)}</strong></div>`
         : '';
     metaContainer.innerHTML = `
                 <div class="space-y-1 w-full text-xs font-semibold">
-                    <div>Machinery: <strong class="text-slate-800 dark:text-white font-extrabold">${item.vehicleMachinery}</strong></div>
-                    <div>Item Spec: <strong class="text-slate-800 dark:text-white font-extrabold">${item.name}</strong></div>
+                    <div>Machinery: <strong class="text-slate-800 dark:text-white font-extrabold">${escapeHtml(item.vehicleMachinery)}</strong></div>
+                    <div>Item Spec: <strong class="text-slate-800 dark:text-white font-extrabold">${escapeHtml(item.name)}</strong></div>
                     ${reqSrcBadge}
                     <div>Fulfillment Status: <strong class="text-indigo-650 dark:text-indigo-400 font-extrabold">${item.recQty || 0} received of ${item.reqQty} requested</strong></div>
                     <div class="text-[10px] text-slate-450 dark:text-slate-500 font-medium">Requisition opened: ${item.reqDate} ${dateGapInfo}</div>
@@ -2660,10 +2657,10 @@ function renderPricingDesk() {
                     <button onclick="openPricingAuditWorkspace('${item.id}', '${receipt.id}')"
                         class="w-full text-left p-4 rounded-2xl border transition shadow-sm outline-none flex flex-col justify-between ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-950/30 border-indigo-400 dark:border-indigo-900/50 ring-1 ring-indigo-300' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-900 hover:shadow-glow'}">
                         <div class="flex justify-between items-start w-full gap-2 mb-1.5">
-                            <span class="text-xs font-extrabold text-slate-900 dark:text-white truncate max-w-[125px]">${item.mrnNum}</span>
+                            <span class="text-xs font-extrabold text-slate-900 dark:text-white truncate max-w-[125px]">${escapeHtml(item.mrnNum)}</span>
                             <span class="text-xs font-black ${receipt.transactionType === 'Return' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-450'} whitespace-nowrap">${typeText}: ${Math.abs(receipt.qty)}</span>
                         </div>
-                        <div class="text-xs font-bold text-slate-700 dark:text-slate-350 truncate w-full mb-2">${item.name}</div>
+                        <div class="text-xs font-bold text-slate-700 dark:text-slate-350 truncate w-full mb-2">${escapeHtml(item.name)}</div>
                         <div class="flex justify-between items-center w-full mt-1.5 pt-2 border-t border-slate-100 dark:border-slate-800/80">
                             <span class="text-[10px] text-slate-400 dark:text-slate-550 font-semibold">${receipt.deliveryDate}</span>
                             ${sourceBadge}
@@ -2984,9 +2981,9 @@ function renderOffcanvasReceiptHistory(item) {
     }
     list.innerHTML = receipts.map((r, i) => {
         const typeText = r.transactionType === 'Return' ? 'Returned' : 'Received';
-        const grnVal = r.grnNumber ? `<span>GRN: <strong class="text-slate-700 dark:text-slate-300 font-extrabold">${r.grnNumber}</strong></span>` : '';
-        const invVal = r.invoiceNumber ? `<span>INV: <strong class="text-slate-700 dark:text-slate-300 font-extrabold">${r.invoiceNumber}</strong></span>` : '';
-        const supplierVal = r.supplierName ? `<span>Supplier: <strong class="text-slate-700 dark:text-slate-300 font-bold">${r.supplierName}</strong></span>` : '';
+        const grnVal = r.grnNumber ? `<span>GRN: <strong class="text-slate-700 dark:text-slate-300 font-extrabold">${escapeHtml(r.grnNumber)}</strong></span>` : '';
+        const invVal = r.invoiceNumber ? `<span>INV: <strong class="text-slate-700 dark:text-slate-300 font-extrabold">${escapeHtml(r.invoiceNumber)}</strong></span>` : '';
+        const supplierVal = r.supplierName ? `<span>Supplier: <strong class="text-slate-700 dark:text-slate-300 font-bold">${escapeHtml(r.supplierName)}</strong></span>` : '';
         const priceVal = r.unitPrice ? `<div class="text-emerald-700 dark:text-emerald-450 font-extrabold mt-1 w-full block">${formatCurrency(r.unitPrice)} &times; ${Math.abs(r.qty)} = ${formatCurrency(Math.abs(r.qty) * r.unitPrice)}</div>` : '';
         const hasPricing = r.grnNumber || r.invoiceNumber || r.supplierName || r.unitPrice;
         return `
@@ -2994,7 +2991,7 @@ function renderOffcanvasReceiptHistory(item) {
                         <div class="flex justify-between items-center w-full mb-1">
                             <span class="font-extrabold ${r.transactionType === 'Return' ? 'text-rose-600 dark:text-rose-400' : 'text-indigo-655 dark:text-indigo-400'}">${typeText} ${Math.abs(r.qty)}</span>
                             <div class="flex gap-2 items-center">
-                                ${r.purchaseSource ? `<span class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-[9px] uppercase tracking-wider font-extrabold rounded-md text-slate-500">${r.purchaseSource}</span>` : ''}
+                                ${r.purchaseSource ? `<span class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-[9px] uppercase tracking-wider font-extrabold rounded-md text-slate-500">${escapeHtml(r.purchaseSource)}</span>` : ''}
                                 ${hasPricing ? `
                                     <button type="button" onclick="clearReceiptPricing('${item.id}', '${r.id}')" class="text-amber-500 hover:text-amber-700 transition" title="Delete Pricing & Supplier Details">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
@@ -3038,7 +3035,6 @@ function openEditRequestModal(itemId) {
     document.getElementById('editReqDesc').value = item.itemDesc || '';
     document.getElementById('editReqQtyInput').value = item.reqQty || '';
     document.getElementById('editReqCategory').value = item.category || '';
-    document.getElementById('editReqPassword').value = ''; // Reset password field
     document.querySelectorAll('input[name="editReqSource"]').forEach(r => { r.checked = (r.value === item.requestSource); });
     modal.classList.remove('hidden');
 }
@@ -3051,11 +3047,6 @@ function closeEditRequestModal() {
 editRequestDetailsForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const itemId = document.getElementById('editRequestDetailsItemId').value;
-    const password = document.getElementById('editReqPassword').value;
-    if (password !== 'E&CWorkshopEdit') {
-        alert('Incorrect confirmation password! Changes cancelled.');
-        return;
-    }
     const mrnNum = document.getElementById('editReqMrnNum').value.trim();
     const reqDate = document.getElementById('editReqDateInput').value;
     const vehicleMachinery = document.getElementById('editReqVehicle').value.trim();
@@ -3263,15 +3254,8 @@ offcanvasPricingForm.addEventListener('submit', async (e) => {
 });
 // Delete entire item requisition record
 async function deleteItem(itemId) {
-    const password = prompt('Please enter the password to confirm deletion:');
-    if (password === null)
-        return;
-    if (password !== 'E&CWorkshop') {
-        alert('Incorrect password! Deletion cancelled.');
-        return;
-    }
     if (confirm('Are you sure you want to permanently delete this item and all its delivery records? This cannot be undone!')) {
-        await syncService.enqueue('DELETE_ITEM', `/api/items/${itemId}?password=${encodeURIComponent(password)}`, 'DELETE', null, () => {
+        await syncService.enqueue('DELETE_ITEM', `/api/items/${itemId}`, 'DELETE', null, () => {
             allItems = allItems.filter(i => String(i.id) !== String(itemId));
             items = items.filter(i => String(i.id) !== String(itemId));
             totalItems--;
@@ -3281,15 +3265,8 @@ async function deleteItem(itemId) {
 }
 // Delete delivery receipt record
 async function deleteReceipt(itemId, receiptId) {
-    const password = prompt('Please enter the password to confirm deletion:');
-    if (password === null)
-        return;
-    if (password !== 'E&CWorkshop') {
-        alert('Incorrect password! Deletion cancelled.');
-        return;
-    }
     if (confirm("Delete this delivery record permanently?")) {
-        await syncService.enqueue('DELETE_RECEIPT', `/api/receipts/${receiptId}?password=${encodeURIComponent(password)}`, 'DELETE', null, () => {
+        await syncService.enqueue('DELETE_RECEIPT', `/api/receipts/${receiptId}`, 'DELETE', null, () => {
             const item = allItems.find(i => String(i.id) === String(itemId));
             if (item && item.receipts) {
                 item.receipts = item.receipts.filter(r => String(r.id) !== String(receiptId));
@@ -3311,13 +3288,6 @@ async function deleteReceipt(itemId, receiptId) {
 }
 // Clear pricing & supplier details from receipt record
 async function clearReceiptPricing(itemId, receiptId) {
-    const password = prompt('Please enter the password to confirm clearing pricing details:');
-    if (password === null)
-        return;
-    if (password !== 'E&CWorkshop') {
-        alert('Incorrect password! Operation cancelled.');
-        return;
-    }
     if (confirm("Delete pricing and supplier details from this receipt permanently?")) {
         const updateData = {
             grnNumber: '',
@@ -3533,11 +3503,11 @@ function renderDailyReceivedLedger() {
             return `
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-900/50 transition">
                             <td class="py-2.5 font-bold">
-                                <div class="text-slate-800 dark:text-slate-200">${r.mrnNum || '-'}</div>
-                                <div class="text-[10px] text-slate-405 mt-0.5">${r.vehicleMachinery || '-'}</div>
+                                <div class="text-slate-800 dark:text-slate-200">${escapeHtml(r.mrnNum || '-')}</div>
+                                <div class="text-[10px] text-slate-405 mt-0.5">${escapeHtml(r.vehicleMachinery || '-')}</div>
                             </td>
                             <td class="py-2.5 font-semibold">
-                                <div class="text-slate-700 dark:text-slate-300 truncate max-w-[150px] sm:max-w-[250px]" title="${r.itemName}">${r.itemName}</div>
+                                <div class="text-slate-700 dark:text-slate-300 truncate max-w-[150px] sm:max-w-[250px]" title="${escapeHtml(r.itemName)}">${escapeHtml(r.itemName)}</div>
                             </td>
                             <td class="py-2.5">
                                 <span class="px-1.5 py-0.5 text-[9px] uppercase font-extrabold rounded-md ${srcClass}">${srcText}</span>
@@ -4095,14 +4065,14 @@ function renderBatteriesView() {
             stateBadge = `<span class="px-2.5 py-1 bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 rounded-full text-[10px] font-bold">Disposed</span>`;
         }
         const locationVal = b.state === 'Installed' ?
-            `<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>${b.currentVehicle}</span>` :
+            `<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>${escapeHtml(b.currentVehicle)}</span>` :
             (b.state === 'Disposed' ? '<span class="text-rose-500 dark:text-rose-400 font-bold">Disposed</span>' : '<span class="text-slate-400 dark:text-slate-500 italic">Store Stock</span>');
         tr.innerHTML = `
-                    <td class="px-6 py-4 text-sm font-extrabold text-indigo-650 dark:text-indigo-400 whitespace-nowrap font-mono">${b.serialNumber}</td>
-                    <td class="px-6 py-4 text-sm font-semibold text-slate-700 dark:text-slate-300">${(b.brand ? b.brand + ' ' : '') + (b.itemName || '')}</td>
+                    <td class="px-6 py-4 text-sm font-extrabold text-indigo-650 dark:text-indigo-400 whitespace-nowrap font-mono">${escapeHtml(b.serialNumber)}</td>
+                    <td class="px-6 py-4 text-sm font-semibold text-slate-700 dark:text-slate-300">${escapeHtml((b.brand ? b.brand + ' ' : '') + (b.itemName || ''))}</td>
                     <td class="px-6 py-4 text-sm whitespace-nowrap">${conditionBadge}</td>
                     <td class="px-6 py-4 text-sm whitespace-nowrap">${stateBadge} <span class="text-xs text-slate-400 dark:text-slate-500 ml-1">(${locationVal})</span></td>
-                    <td class="px-6 py-4 text-sm text-slate-500 dark:text-slate-400 max-w-[200px] truncate" title="${b.notes || ''}">${b.notes || '<span class="text-slate-350 dark:text-slate-600">-</span>'}</td>
+                    <td class="px-6 py-4 text-sm text-slate-500 dark:text-slate-400 max-w-[200px] truncate" title="${escapeHtml(b.notes || '')}">${b.notes ? escapeHtml(b.notes) : '<span class="text-slate-350 dark:text-slate-600">-</span>'}</td>
                     <td class="px-6 py-4 text-sm text-right whitespace-nowrap flex justify-end gap-1">
                         <a href="#battery-move/${b.id}" class="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition" title="Log Movement">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
@@ -4324,16 +4294,16 @@ async function openBatteryOffcanvas(batteryId) {
                                 <div class="flex justify-between items-center text-xs text-slate-400 dark:text-slate-500 font-extrabold">
                                     <span>${m.movementDate}</span>
                                     <div class="flex gap-1">
-                                        <span class="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md text-slate-655 dark:text-slate-350 border border-slate-200/50 dark:border-slate-700/50 font-bold">${m.movementType}</span>
+                                        <span class="text-[10px] bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md text-slate-655 dark:text-slate-350 border border-slate-200/50 dark:border-slate-700/50 font-bold">${escapeHtml(m.movementType)}</span>
                                         <span class="text-[10px] bg-slate-150 dark:bg-slate-800 px-2 py-0.5 rounded-md text-slate-600 dark:text-slate-400 border border-slate-200/50 dark:border-slate-700/50">${m.conditionAfter}</span>
                                     </div>
                                 </div>
                                 <div class="text-sm font-bold text-slate-700 dark:text-slate-200 mt-1.5 flex items-center gap-1.5 flex-wrap">
-                                    <span class="text-indigo-650 dark:text-indigo-400 font-extrabold">${m.fromLocation || 'Store'}</span>
+                                    <span class="text-indigo-650 dark:text-indigo-400 font-extrabold">${escapeHtml(m.fromLocation || 'Store')}</span>
                                     <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-                                    <span class="text-emerald-655 dark:text-emerald-400 font-extrabold">${m.toLocation || 'Store'}</span>
+                                    <span class="text-emerald-655 dark:text-emerald-400 font-extrabold">${escapeHtml(m.toLocation || 'Store')}</span>
                                 </div>
-                                ${m.notes ? `<p class="text-xs text-slate-500 dark:text-slate-400 mt-2 italic font-medium leading-relaxed bg-white dark:bg-slate-900/60 p-2 rounded-xl border border-slate-100 dark:border-slate-850/40">${m.notes}</p>` : ''}
+                                ${m.notes ? `<p class="text-xs text-slate-500 dark:text-slate-400 mt-2 italic font-medium leading-relaxed bg-white dark:bg-slate-900/60 p-2 rounded-xl border border-slate-100 dark:border-slate-850/40">${escapeHtml(m.notes)}</p>` : ''}
                             </div>
                         `;
                 pathList.appendChild(div);
@@ -4354,13 +4324,11 @@ function openMoveFromOffcanvas() {
     window.location.hash = `#battery-move/${batteryId}`;
 }
 async function deleteBatteryRecord(id) {
-    const password = prompt('Enter password to delete battery record:');
-    if (password === null)
+    if (!confirm('Delete this battery record permanently?'))
         return;
     try {
         const res = await fetch(`/api/batteries/${id}`, {
-            method: 'DELETE',
-            headers: { 'x-delete-password': password }
+            method: 'DELETE'
         });
         const r = await res.json();
         if (!res.ok)
@@ -4433,12 +4401,12 @@ function renderTransfersView() {
                 return;
             openTransferOffcanvas(t.id);
         };
-        const catBadge = `<span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400 border border-indigo-100/50 dark:border-indigo-900/30 rounded-full text-[10px] font-bold">${t.category || 'General Items'}</span>`;
+        const catBadge = `<span class="px-2.5 py-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400 border border-indigo-100/50 dark:border-indigo-900/30 rounded-full text-[10px] font-bold">${escapeHtml(t.category || 'General Items')}</span>`;
         tr.innerHTML = `
                     <td class="px-6 py-4 text-sm font-extrabold text-indigo-650 dark:text-indigo-400 whitespace-nowrap font-mono">${escapeHtml(t.mtnNum)}</td>
-                    <td class="px-6 py-4 text-sm font-semibold text-slate-700 dark:text-slate-350 whitespace-nowrap">${t.transferDate || ''}</td>
+                    <td class="px-6 py-4 text-sm font-semibold text-slate-700 dark:text-slate-350 whitespace-nowrap">${escapeHtml(t.transferDate || '')}</td>
                     <td class="px-6 py-4 text-sm whitespace-nowrap">${catBadge}</td>
-                    <td class="px-6 py-4 text-sm font-bold text-slate-800 dark:text-slate-200" title="${t.itemDesc || ''}">${escapeHtml(t.itemName)}</td>
+                    <td class="px-6 py-4 text-sm font-bold text-slate-800 dark:text-slate-200" title="${escapeHtml(t.itemDesc || '')}">${escapeHtml(t.itemName)}</td>
                     <td class="px-6 py-4 text-sm font-extrabold text-slate-800 dark:text-slate-200 whitespace-nowrap">${t.qty || 0}</td>
                     <td class="px-6 py-4 text-sm font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">${escapeHtml(t.fromLocation)}</td>
                     <td class="px-6 py-4 text-sm font-semibold text-slate-600 dark:text-slate-400 whitespace-nowrap">${escapeHtml(t.toLocation)}</td>
@@ -4504,13 +4472,11 @@ async function setupTransferEntry(transferId = null) {
     }
 }
 async function deleteTransferRecord(id) {
-    const password = prompt('Enter password to delete transfer record:');
-    if (password === null)
+    if (!confirm('Delete this transfer record permanently?'))
         return;
     try {
         const res = await fetch(`/api/transfers/${id}`, {
-            method: 'DELETE',
-            headers: { 'x-delete-password': password }
+            method: 'DELETE'
         });
         const r = await res.json();
         if (!res.ok)

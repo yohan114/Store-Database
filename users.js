@@ -25,16 +25,18 @@ function ensureSeedApprovers() {
         ['tmanager', 'Transport Manager', R.TRANSPORT_MANAGER],
         ['opsmanager', 'Operational Manager', R.OPERATIONAL_MANAGER],
     ];
+    const seedPass = process.env.SEED_APPROVER_PASSWORD || 'changeme123';
     for (const [username, name, role] of seeds) {
         const exists = db.get('SELECT 1 FROM users WHERE username=?', [username]);
         if (exists) continue;
-        const { salt, hash } = auth.hashPassword('changeme123');
+        const { salt, hash } = auth.hashPassword(seedPass);
         db.run(
             `INSERT INTO users (username, name, designation, email, roles, passwordHash, passwordSalt, active, mustChangePassword, createdAt)
              VALUES (?,?,?,?,?,?,?,?,?,?)`,
             [username, name, name, '', JSON.stringify([role]), hash, salt, 1, 1, nowISO()]
         );
-        console.log(`  Seeded ${role} login  →  username: ${username}   password: changeme123`);
+        const shown = process.env.SEED_APPROVER_PASSWORD ? '(from SEED_APPROVER_PASSWORD)' : `password: ${seedPass}`;
+        console.log(`  Seeded ${role} login  →  username: ${username}   ${shown}`);
     }
 }
 

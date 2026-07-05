@@ -150,6 +150,33 @@ app.get('/api/health', (req, res) => {
     }
 });
 
+// Read-only KPI summary for the E&C Master Portal. Token-authed via the
+// x-portal-token header and mounted BEFORE the session gate so the portal can
+// read it server-to-server without a login. Reuses dashboard.build() so the
+// numbers always match the in-app dashboard. Never mutates.
+app.get('/api/portal/summary', (req, res) => {
+    const token = req.get('x-portal-token');
+    const expected = process.env.PORTAL_TOKEN;
+    if (!expected || !token || token !== expected) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const d = dashboard.build();
+    const pendingJr = (dbApi.get(
+        "SELECT COUNT(*) AS c FROM job_requests WHERE status IN ('PENDING_TM','PENDING_OM')"
+    ) || {}).c || 0;
+    const rs = (n) => 'Rs ' + Math.round(Number(n) || 0).toLocaleString('en-LK');
+    res.json({
+        system: 'workshop',
+        generatedAt: new Date().toISOString(),
+        kpis: [
+            { label: 'Spend this month', value: rs(d.spend.mtd), tone: 'neutral' },
+            { label: 'Pending MRN lines', value: d.pending.counts.total, tone: d.pending.counts.total > 0 ? 'warn' : 'good' },
+            { label: 'Active job cards', value: d.jobs.active, tone: 'neutral' },
+            { label: 'Pending approvals', value: pendingJr, tone: pendingJr > 0 ? 'warn' : 'good' },
+        ],
+    });
+});
+
 // ---- Gate everything else behind authentication ---------------------------
 app.use('/api', auth.requireApiAuth);
 app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res) => {

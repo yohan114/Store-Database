@@ -86,16 +86,37 @@ app.post('/api/account/password', auth.requireApiAuth, (req, res) => {
 
 // ---- Gate everything else behind authentication ---------------------------
 app.use('/api', auth.requireApiAuth);
-app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res, next) => {
+app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res) => {
     if (req.path === '/') return res.redirect('/item_tracker.html');
-    next();
+    res.sendFile(path.join(__dirname, 'item_tracker.html'));
 });
-
-app.use(express.static(__dirname));
+// No blanket static serving: it exposed inventory.db, backups/ and the raw
+// data files to anyone on the network without a login. The app is fully
+// self-contained in item_tracker.html + login.html (assets come from CDNs).
 
 // ---- Unified dashboard analytics -------------------------------------------
 app.get('/api/dashboard', (req, res) => {
     res.json(dashboard.build(req.query));
+});
+
+// ---- Lightweight change signature for client polling ------------------------
+// The UI polls this tiny endpoint instead of re-downloading the whole dataset;
+// it only refetches when `version` changes. Receipt writes bump the parent
+// item's updatedAt so pricing edits are visible in the signature too.
+app.get('/api/summary', (req, res) => {
+    try {
+        const parts = [];
+        for (const t of ['items', 'receipts', 'issues', 'batteries', 'material_transfers', 'jobcards', 'daily_programme']) {
+            const r = dbApi.get(`SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m FROM ${t}`);
+            parts.push(`${r.n}:${r.m}`);
+        }
+        for (const t of ['items', 'issues', 'batteries', 'material_transfers', 'jobcards', 'daily_programme']) {
+            parts.push((dbApi.get(`SELECT COALESCE(MAX(updatedAt),'') AS u FROM ${t}`) || {}).u || '');
+        }
+        res.json({ version: parts.join('|') });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // ---- Job Cards -------------------------------------------------------------
@@ -294,6 +315,22 @@ const ITEM_SORTS = {
     gap: '(reqQty - recQty)',
 };
 
+// Canonical source values. Requests are sourced 'Local' or 'Head Office';
+// deliveries are 'Local Purchase' or 'Head Office Purchase'. Legacy spellings
+// are folded into the canonical ones so old clients/imports can't fragment.
+function normRequestSource(v) {
+    const t = String(v || '').trim().toLowerCase();
+    if (t === 'local') return 'Local';
+    if (t === 'head office' || t === 'headoffice') return 'Head Office';
+    return null;
+}
+function canonicalPurchaseSource(v) {
+    const t = String(v || '').trim().toLowerCase();
+    if (['local store', 'local purchase', 'local'].includes(t)) return 'Local Purchase';
+    if (['direct purchase', 'head office', 'pre-ordered', 'head office purchase', 'headoffice purchase'].includes(t)) return 'Head Office Purchase';
+    return s(v);
+}
+
 // Build the item-level WHERE clause shared by list + count queries.
 function buildItemWhere(q) {
     const where = [];
@@ -305,6 +342,10 @@ function buildItemWhere(q) {
     }
     if (q.category && q.category !== 'all') { where.push(`i.category = ?`); params.push(q.category); }
     if (q.vehicle && q.vehicle !== 'all') { where.push(`LOWER(TRIM(i.vehicleMachinery)) = LOWER(TRIM(?))`); params.push(q.vehicle); }
+    if (q.requestSource && q.requestSource !== 'all') {
+        if (q.requestSource === 'Unspecified') where.push(`(i.requestSource IS NULL OR i.requestSource = '')`);
+        else { where.push(`i.requestSource = ?`); params.push(normRequestSource(q.requestSource) || q.requestSource); }
+    }
     const startISO = q.startDate ? toISO(q.startDate) : '';
     const endISO = q.endDate ? toISO(q.endDate) : '';
     if (startISO) { where.push(`i.reqDateISO >= ? AND i.reqDateISO != ''`); params.push(startISO); }
@@ -389,9 +430,9 @@ app.post('/api/items', (req, res) => {
         const category = b.category && String(b.category).trim() ? String(b.category).trim() : classify(itemName, itemDesc);
         const now = nowISO();
         const r = dbApi.run(
-            `INSERT INTO items (mrnNum, reqDate, reqDateISO, vehicleMachinery, itemName, itemDesc, reqQty, category, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [s(b.mrnNum), s(b.reqDate), toISO(b.reqDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.reqQty) || 0, category, now, now]
+            `INSERT INTO items (mrnNum, reqDate, reqDateISO, vehicleMachinery, itemName, itemDesc, reqQty, category, requestSource, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [s(b.mrnNum), s(b.reqDate), toISO(b.reqDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.reqQty) || 0, category, normRequestSource(b.requestSource), now, now]
         );
         // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
         let linkedJobNo = null;
@@ -417,8 +458,8 @@ app.put('/api/items/:id', (req, res) => {
         const itemDesc = s(b.itemDesc);
         const category = b.category && String(b.category).trim() ? String(b.category).trim() : classify(itemName, itemDesc);
         dbApi.run(
-            `UPDATE items SET mrnNum=?, reqDate=?, reqDateISO=?, vehicleMachinery=?, itemName=?, itemDesc=?, reqQty=?, category=?, updatedAt=? WHERE id=?`,
-            [s(b.mrnNum), s(b.reqDate), toISO(b.reqDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.reqQty) || 0, category, nowISO(), id]
+            `UPDATE items SET mrnNum=?, reqDate=?, reqDateISO=?, vehicleMachinery=?, itemName=?, itemDesc=?, reqQty=?, category=?, requestSource=COALESCE(?, requestSource), updatedAt=? WHERE id=?`,
+            [s(b.mrnNum), s(b.reqDate), toISO(b.reqDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.reqQty) || 0, category, normRequestSource(b.requestSource), nowISO(), id]
         );
         if (b.jobCardId !== undefined) setItemJob(id, b.jobCardId || null);
         res.json({ success: true, category });
@@ -460,9 +501,10 @@ app.post('/api/items/:id/receipts', (req, res) => {
         const r = dbApi.run(
             `INSERT INTO receipts (itemId, qty, transactionType, deliveryDate, deliveryDateISO, purchaseSource, grnNumber, invoiceNumber, invoiceDate, supplierName, unitPrice)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [itemId, Number(b.qty) || 0, s(b.transactionType), s(b.deliveryDate), toISO(b.deliveryDate), s(b.purchaseSource),
+            [itemId, Number(b.qty) || 0, s(b.transactionType), s(b.deliveryDate), toISO(b.deliveryDate), canonicalPurchaseSource(b.purchaseSource),
              s(b.grnNumber), s(b.invoiceNumber), s(b.invoiceDate), s(b.supplierName), numOrNull(b.unitPrice)]
         );
+        dbApi.run(`UPDATE items SET updatedAt=? WHERE id=?`, [nowISO(), itemId]);
         res.json({ success: true, id: r.lastInsertRowid });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -485,7 +527,7 @@ app.put('/api/receipts/:id', (req, res) => {
         if (Object.prototype.hasOwnProperty.call(b, 'deliveryDate')) {
             fields.push('deliveryDate=?', 'deliveryDateISO=?'); params.push(s(b.deliveryDate), toISO(b.deliveryDate));
         }
-        setIf('purchaseSource', 'purchaseSource');
+        setIf('purchaseSource', 'purchaseSource', canonicalPurchaseSource);
         setIf('grnNumber', 'grnNumber');
         setIf('invoiceNumber', 'invoiceNumber');
         setIf('invoiceDate', 'invoiceDate');
@@ -494,6 +536,7 @@ app.put('/api/receipts/:id', (req, res) => {
         if (!fields.length) return res.json({ success: true });
         params.push(id);
         dbApi.run(`UPDATE receipts SET ${fields.join(', ')} WHERE id=?`, params);
+        dbApi.run(`UPDATE items SET updatedAt=? WHERE id=(SELECT itemId FROM receipts WHERE id=?)`, [nowISO(), id]);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -503,7 +546,10 @@ app.put('/api/receipts/:id', (req, res) => {
 // 7. DELETE /api/receipts/:id
 app.delete('/api/receipts/:id', verifyDeletePassword, (req, res) => {
     try {
-        dbApi.run(`DELETE FROM receipts WHERE id=?`, [parseInt(req.params.id)]);
+        const rid = parseInt(req.params.id);
+        const owner = dbApi.get(`SELECT itemId FROM receipts WHERE id=?`, [rid]);
+        dbApi.run(`DELETE FROM receipts WHERE id=?`, [rid]);
+        if (owner) dbApi.run(`UPDATE items SET updatedAt=? WHERE id=?`, [nowISO(), owner.itemId]);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -541,18 +587,48 @@ app.get('/api/issues', (req, res) => {
     }
 });
 
+// How much of a linked request line is still available to issue: receipts
+// minus issues drawn from it (linked by itemId, or legacy rows matching the
+// same MRN + name). Only issues that pick a request line (itemId) are hard-
+// validated — free-text issues keep the client-side soft check, because the
+// legacy data contains name-level imbalances that would block real work.
+// Returns an error string when qty cannot be issued, else null.
+function checkIssueStock({ itemId, qty, excludeIssueId }) {
+    if (!itemId || !(qty > 0)) return null;
+    const EPS = 0.005;
+    const excl = excludeIssueId || -1;
+    const item = dbApi.get(`SELECT id, mrnNum, itemName FROM items WHERE id=?`, [itemId]);
+    if (!item) return 'Selected request line no longer exists.';
+    const received = (dbApi.get(`SELECT COALESCE(SUM(qty),0) AS q FROM receipts WHERE itemId=?`, [itemId]) || {}).q || 0;
+    const issued = (dbApi.get(
+        `SELECT COALESCE(SUM(qty),0) AS q FROM issues
+         WHERE id != ? AND (itemId = ? OR (itemId IS NULL
+               AND LOWER(TRIM(itemName)) = LOWER(TRIM(?))
+               AND LOWER(TRIM(COALESCE(mrnNum,''))) = LOWER(TRIM(?))))`,
+        [excl, itemId, item.itemName, item.mrnNum || '']) || {}).q || 0;
+    const available = received - issued;
+    if (qty > available + EPS) {
+        return `Insufficient stock on MRN ${item.mrnNum || item.id}: received ${received}, already issued ${issued}, available ${Math.max(0, Math.round(available * 100) / 100)} — cannot issue ${qty}.`;
+    }
+    return null;
+}
+
 app.post('/api/issues', (req, res) => {
     try {
         const b = req.body || {};
         const itemName = s(b.itemName);
         const itemDesc = s(b.itemDesc);
         const category = b.category && String(b.category).trim() ? String(b.category).trim() : classify(itemName, itemDesc);
+        const itemId = b.itemId ? parseInt(b.itemId) : null;
+        const qty = Number(b.qty) || 0;
+        const stockErr = checkIssueStock({ itemId, qty, excludeIssueId: null });
+        if (stockErr) return res.status(400).json({ error: stockErr });
         const now = nowISO();
         const r = dbApi.run(
-            `INSERT INTO issues (issueDate, issueDateISO, vehicleMachinery, itemName, itemDesc, qty, category, issuedTo, issuedBy, mrnNum, purchaseSource, notes, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [s(b.issueDate), toISO(b.issueDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.qty) || 0, category,
-             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), now, now]
+            `INSERT INTO issues (issueDate, issueDateISO, vehicleMachinery, itemName, itemDesc, qty, category, issuedTo, issuedBy, mrnNum, purchaseSource, notes, itemId, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [s(b.issueDate), toISO(b.issueDate), s(b.vehicleMachinery), itemName, itemDesc, qty, category,
+             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), itemId, now, now]
         );
         // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
         let issJobNo = null;
@@ -574,10 +650,18 @@ app.put('/api/issues/:id', (req, res) => {
         const itemName = s(b.itemName);
         const itemDesc = s(b.itemDesc);
         const category = b.category && String(b.category).trim() ? String(b.category).trim() : classify(itemName, itemDesc);
+        const existing = dbApi.get(`SELECT itemId FROM issues WHERE id=?`, [id]);
+        if (!existing) return res.status(404).json({ error: 'Issue not found' });
+        const itemId = Object.prototype.hasOwnProperty.call(b, 'itemId')
+            ? (b.itemId ? parseInt(b.itemId) : null)
+            : existing.itemId;
+        const qty = Number(b.qty) || 0;
+        const stockErr = checkIssueStock({ itemId, qty, excludeIssueId: id });
+        if (stockErr) return res.status(400).json({ error: stockErr });
         dbApi.run(
-            `UPDATE issues SET issueDate=?, issueDateISO=?, vehicleMachinery=?, itemName=?, itemDesc=?, qty=?, category=?, issuedTo=?, issuedBy=?, mrnNum=?, purchaseSource=?, notes=?, updatedAt=? WHERE id=?`,
-            [s(b.issueDate), toISO(b.issueDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.qty) || 0, category,
-             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), nowISO(), id]
+            `UPDATE issues SET issueDate=?, issueDateISO=?, vehicleMachinery=?, itemName=?, itemDesc=?, qty=?, category=?, issuedTo=?, issuedBy=?, mrnNum=?, purchaseSource=?, notes=?, itemId=?, updatedAt=? WHERE id=?`,
+            [s(b.issueDate), toISO(b.issueDate), s(b.vehicleMachinery), itemName, itemDesc, qty, category,
+             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), itemId, nowISO(), id]
         );
         res.json({ success: true, category });
     } catch (e) {
@@ -1045,18 +1129,18 @@ app.post('/api/import', (req, res) => {
         const data = req.body;
         if (!Array.isArray(data)) return res.status(400).json({ error: 'Data must be an array of items' });
         const now = nowISO();
-        const insItem = `INSERT INTO items (mrnNum, reqDate, reqDateISO, vehicleMachinery, itemName, itemDesc, reqQty, category, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?)`;
+        const insItem = `INSERT INTO items (mrnNum, reqDate, reqDateISO, vehicleMachinery, itemName, itemDesc, reqQty, category, requestSource, createdAt, updatedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)`;
         const insRec = `INSERT INTO receipts (itemId, qty, transactionType, deliveryDate, deliveryDateISO, purchaseSource, grnNumber, invoiceNumber, invoiceDate, supplierName, unitPrice) VALUES (?,?,?,?,?,?,?,?,?,?,?)`;
         dbApi.transaction(() => {
             for (const it of data) {
                 const itemName = s(it.itemName || it.name);
                 const itemDesc = s(it.itemDesc);
                 const category = it.category && String(it.category).trim() ? String(it.category).trim() : classify(itemName, itemDesc);
-                const r = dbApi.run(insItem, [s(it.mrnNum), s(it.reqDate), toISO(it.reqDate), s(it.vehicleMachinery), itemName, itemDesc, Number(it.reqQty) || 0, category, now, now]);
+                const r = dbApi.run(insItem, [s(it.mrnNum), s(it.reqDate), toISO(it.reqDate), s(it.vehicleMachinery), itemName, itemDesc, Number(it.reqQty) || 0, category, normRequestSource(it.requestSource), now, now]);
                 const itemId = r.lastInsertRowid;
                 for (const rc of (it.receipts || [])) {
                     dbApi.run(insRec, [itemId, Number(rc.qty) || 0, s(rc.transactionType || rc.type || 'Receive'), s(rc.deliveryDate || rc.date), toISO(rc.deliveryDate || rc.date),
-                        s(rc.purchaseSource || rc.source), s(rc.grnNumber), s(rc.invoiceNumber), s(rc.invoiceDate), s(rc.supplierName), numOrNull(rc.unitPrice)]);
+                        canonicalPurchaseSource(rc.purchaseSource || rc.source), s(rc.grnNumber), s(rc.invoiceNumber), s(rc.invoiceDate), s(rc.supplierName), numOrNull(rc.unitPrice)]);
                 }
             }
         });

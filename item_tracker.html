@@ -618,6 +618,30 @@
                         </div>
                     </div>
 
+                    <!-- Today's purchases + pending counters -->
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 p-5 shadow-glass-light dark:shadow-glass-dark">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Today · Local Purchase</p>
+                            <h3 id="kpiTodayLocal" class="text-2xl font-black text-slate-800 dark:text-white mt-1.5 tracking-tight">Rs. 0</h3>
+                            <p id="kpiYdayLocal" class="text-[10px] font-semibold text-slate-400 mt-1">Yesterday: Rs. 0</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-indigo-100 dark:border-indigo-900/40 p-5 shadow-glass-light dark:shadow-glass-dark">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">Today · Head Office Purchase</p>
+                            <h3 id="kpiTodayHo" class="text-2xl font-black text-slate-800 dark:text-white mt-1.5 tracking-tight">Rs. 0</h3>
+                            <p id="kpiYdayHo" class="text-[10px] font-semibold text-slate-400 mt-1">Yesterday: Rs. 0</p>
+                        </div>
+                        <a href="#dash-pending" onclick="setPendingTab('local')" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark hover:border-emerald-300 dark:hover:border-emerald-800 transition">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Pending · Local</p>
+                            <h3 id="kpiPendingLocal" class="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1.5 tracking-tight">0</h3>
+                            <p class="text-[10px] font-semibold text-slate-400 mt-1">items not fully delivered</p>
+                        </a>
+                        <a href="#dash-pending" onclick="setPendingTab('headOffice')" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark hover:border-indigo-300 dark:hover:border-indigo-800 transition">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Pending · Head Office</p>
+                            <h3 id="kpiPendingHo" class="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-1.5 tracking-tight">0</h3>
+                            <p class="text-[10px] font-semibold text-slate-400 mt-1">items not fully delivered</p>
+                        </a>
+                    </div>
+
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
                         <!-- Local vs Head Office -->
                         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-6 shadow-glass-light dark:shadow-glass-dark">
@@ -657,6 +681,47 @@
                                     </tr>
                                 </thead>
                                 <tbody id="dashDailyBody" class="divide-y divide-slate-100 dark:divide-slate-800/70"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Monthly expenses -->
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-glass-light dark:shadow-glass-dark overflow-hidden">
+                        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+                            <h3 class="text-xs font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Monthly Expenses — Local vs Head Office</h3>
+                            <span class="text-[11px] font-semibold text-slate-400">last 12 months</span>
+                        </div>
+                        <div class="px-6 pt-4"><div class="relative h-56"><canvas id="dashMonthlyChart"></canvas></div></div>
+                        <div class="overflow-x-auto max-h-72 overflow-y-auto mt-2">
+                            <table class="w-full text-sm">
+                                <thead class="bg-slate-50 dark:bg-slate-900/80 sticky top-0">
+                                    <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                        <th class="px-6 py-3">Month</th><th class="px-6 py-3 text-right">Head Office Purchase</th><th class="px-6 py-3 text-right">Local Purchase</th><th class="px-6 py-3 text-right">Other</th><th class="px-6 py-3 text-right">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dashMonthlyBody" class="divide-y divide-slate-100 dark:divide-slate-800/70"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Pending items: Local vs Head Office -->
+                    <div id="dash-pending" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-glass-light dark:shadow-glass-dark overflow-hidden">
+                        <div class="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+                            <h3 class="text-xs font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Pending Items — awaiting delivery</h3>
+                            <div class="flex rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+                                <button onclick="setPendingTab('headOffice')" id="pendTabHeadOffice" class="px-3 py-1.5 text-xs font-bold bg-indigo-600 text-white">Head Office (<span id="pendCountHo">0</span>)</button>
+                                <button onclick="setPendingTab('local')" id="pendTabLocal" class="px-3 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-l border-slate-200 dark:border-slate-700">Local (<span id="pendCountLocal">0</span>)</button>
+                                <button onclick="setPendingTab('unspecified')" id="pendTabUnspecified" class="px-3 py-1.5 text-xs font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-l border-slate-200 dark:border-slate-700">Unspecified (<span id="pendCountUnspec">0</span>)</button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto max-h-96 overflow-y-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-slate-50 dark:bg-slate-900/80 sticky top-0">
+                                    <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                        <th class="px-6 py-3">MRN</th><th class="px-6 py-3">Item</th><th class="px-6 py-3">Vehicle</th><th class="px-6 py-3">Requested</th><th class="px-6 py-3 text-right">Outstanding Qty</th><th class="px-6 py-3 text-right">Days Waiting</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dashPendingBody" class="divide-y divide-slate-100 dark:divide-slate-800/70"></tbody>
                             </table>
                         </div>
                     </div>
@@ -770,11 +835,11 @@
                             <div class="flex gap-4 text-xs font-bold text-slate-500">
                                 <div class="flex items-center gap-1.5">
                                     <span class="w-2.5 h-2.5 rounded-full bg-indigo-650 dark:bg-indigo-400"></span>
-                                    <span>Head Office (Direct)</span>
+                                    <span>Head Office Purchase</span>
                                 </div>
                                 <div class="flex items-center gap-1.5">
                                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 dark:bg-emerald-450"></span>
-                                    <span>Local Purchase (Store)</span>
+                                    <span>Local Purchase</span>
                                 </div>
                             </div>
                         </div>
@@ -898,7 +963,7 @@
                             Reset Filters
                         </button>
                     </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                         <div>
                             <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Requested From (Start Date)</label>
                             <input type="date" id="advStartDate" onchange="handleAdvSearchChange()" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100 font-semibold">
@@ -917,6 +982,15 @@
                             <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Filter by Category</label>
                             <select id="advCategory" onchange="handleAdvSearchChange()" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100 font-bold">
                                 <option value="all">All Categories</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Request Source</label>
+                            <select id="advRequestSource" onchange="handleAdvSearchChange()" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100 font-bold">
+                                <option value="all">All Sources</option>
+                                <option value="Local">Local</option>
+                                <option value="Head Office">Head Office</option>
+                                <option value="Unspecified">Unspecified (old)</option>
                             </select>
                         </div>
                     </div>
@@ -1048,18 +1122,15 @@
                                 <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Purchase / Supply Source <span class="text-red-500">*</span></label>
                                 <div class="flex flex-wrap gap-3.5 mt-1.5">
                                     <label class="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer hover:border-indigo-500">
-                                        <input type="radio" name="recDeskPurchaseSource" value="Local Store" required class="text-indigo-650">
-                                        <span>Local Store</span>
+                                        <input type="radio" name="recDeskPurchaseSource" value="Local Purchase" required class="text-indigo-650">
+                                        <span>Local Purchase</span>
                                     </label>
                                     <label class="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer hover:border-indigo-500">
-                                        <input type="radio" name="recDeskPurchaseSource" value="Direct Purchase" class="text-indigo-650">
-                                        <span>Direct Purchase</span>
-                                    </label>
-                                    <label class="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer hover:border-indigo-500">
-                                        <input type="radio" name="recDeskPurchaseSource" value="Pre-Ordered" class="text-indigo-650">
-                                        <span>Pre-Ordered</span>
+                                        <input type="radio" name="recDeskPurchaseSource" value="Head Office Purchase" class="text-indigo-650">
+                                        <span>Head Office Purchase</span>
                                     </label>
                                 </div>
+                                <p id="recDeskSourceMismatch" class="hidden mt-2 text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 rounded-lg px-3 py-2"></p>
                             </div>
                         </div>
 
@@ -2046,6 +2117,19 @@
                     <input type="number" id="reqQty" step="0.01" required min="0.01" placeholder="e.g. 10" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100">
                 </div>
                 <div class="md:col-span-2">
+                    <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Request From <span class="text-red-500">*</span></label>
+                    <div class="flex gap-3.5 p-3 border border-slate-200 dark:border-slate-850 rounded-xl bg-slate-50 dark:bg-slate-900">
+                        <label class="flex items-center gap-2 cursor-pointer font-semibold text-sm">
+                            <input type="radio" name="reqSource" value="Local" required class="text-indigo-650 focus:ring-indigo-500">
+                            <span>Local</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer font-semibold text-sm">
+                            <input type="radio" name="reqSource" value="Head Office" class="text-indigo-650 focus:ring-indigo-500">
+                            <span>Head Office</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="md:col-span-2">
                     <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Link to Job Card <span class="text-slate-400 normal-case font-medium">(optional — for job cost)</span></label>
                     <select id="jcLinkSelect" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100 font-semibold">
                         <option value="">— No job card —</option>
@@ -2346,6 +2430,19 @@
                         <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Requested Qty <span class="text-red-500">*</span></label>
                         <input type="number" id="editReqQtyInput" step="0.01" required min="0.01" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-850 dark:text-slate-100 font-extrabold">
                     </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Request From <span class="text-red-500">*</span></label>
+                        <div class="flex gap-3.5 p-3 border border-slate-200 dark:border-slate-850 rounded-xl bg-slate-50 dark:bg-slate-900">
+                            <label class="flex items-center gap-2 cursor-pointer font-semibold text-sm">
+                                <input type="radio" name="editReqSource" value="Local" required class="text-indigo-650 focus:ring-indigo-500">
+                                <span>Local</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer font-semibold text-sm">
+                                <input type="radio" name="editReqSource" value="Head Office" class="text-indigo-650 focus:ring-indigo-500">
+                                <span>Head Office</span>
+                            </label>
+                        </div>
+                    </div>
                     <div>
                         <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Edit Confirmation Password <span class="text-red-500">*</span></label>
                         <input type="password" id="editReqPassword" required placeholder="Enter password to confirm" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3 border outline-none text-sm bg-white dark:bg-slate-900 text-slate-850 dark:text-slate-100 font-semibold">
@@ -2523,6 +2620,8 @@
         let searchEndDate = '';
         let searchVehicle = 'all';
         let searchCategory = 'all';
+        let searchRequestSource = 'all';
+        let lastDataVersion = null; // /api/summary change signature for cheap polling
 
         // Batteries state
         let batteries = [];
@@ -2534,6 +2633,33 @@
 
         // Category + Issues state
         const FALLBACK_CATEGORIES = ['Battery','Filters','Tyre','Oil & Lubricants','Electrical','Bearings & Seals','Belts','Hydraulics','General Items'];
+
+        // Fold any legacy purchase-source spelling into the two canonical values.
+        function canonicalSourceText(v) {
+            const t = String(v || '').trim().toLowerCase();
+            if (['local store', 'local purchase', 'local'].includes(t)) return 'Local Purchase';
+            if (['direct purchase', 'head office', 'pre-ordered', 'head office purchase', 'headoffice purchase'].includes(t)) return 'Head Office Purchase';
+            return String(v || '');
+        }
+
+        // Total qty already issued against a request item. One shared rule for
+        // Issue Desk, Fleet and Store Stock: the hard itemId link wins, then
+        // MRN + name, then vehicle + name, then name alone (legacy rows).
+        function issuedQtyForItem(item, excludeIssueId = null) {
+            const norm = (v) => String(v || '').trim().toLowerCase();
+            const itemName = norm(item.name || item.itemName);
+            return issues.filter(is => {
+                if (excludeIssueId && String(is.id) === String(excludeIssueId)) return false;
+                if (is.itemId) return String(is.itemId) === String(item.id);
+                if (item.mrnNum && is.mrnNum) {
+                    return norm(is.mrnNum) === norm(item.mrnNum) && norm(is.itemName) === itemName;
+                }
+                if (item.vehicleMachinery && is.vehicleMachinery) {
+                    return norm(is.vehicleMachinery) === norm(item.vehicleMachinery) && norm(is.itemName) === itemName;
+                }
+                return norm(is.itemName) === itemName;
+            }).reduce((sum, is) => sum + is.qty, 0);
+        }
         let allCategories = FALLBACK_CATEGORIES.slice();
         let categoryCounts = {};
         let allVehicles = [];
@@ -2943,6 +3069,8 @@
                             name: b.itemName,
                             itemDesc: b.itemDesc,
                             reqQty: b.reqQty,
+                            category: b.category || '',
+                            requestSource: b.requestSource || null,
                             recQty: 0,
                             recDate: null,
                             purchaseSource: '',
@@ -3018,7 +3146,7 @@
         // Fetch paginated page of items for the tracker grid
         async function fetchTrackerPage() {
             try {
-                const url = `/api/items?page=${currentPage}&limit=${pageSize}&search=${encodeURIComponent(searchQuery)}&filter=${currentFilterTab}&sort=${sortColumn}&order=${sortDirection}&startDate=${encodeURIComponent(searchStartDate)}&endDate=${encodeURIComponent(searchEndDate)}&vehicle=${encodeURIComponent(searchVehicle)}&category=${encodeURIComponent(searchCategory)}`;
+                const url = `/api/items?page=${currentPage}&limit=${pageSize}&search=${encodeURIComponent(searchQuery)}&filter=${currentFilterTab}&sort=${sortColumn}&order=${sortDirection}&startDate=${encodeURIComponent(searchStartDate)}&endDate=${encodeURIComponent(searchEndDate)}&vehicle=${encodeURIComponent(searchVehicle)}&category=${encodeURIComponent(searchCategory)}&requestSource=${encodeURIComponent(searchRequestSource)}`;
                 const res = await fetch(url);
                 if (!res.ok) throw new Error('Failed to load tracker page');
                 const data = await res.json();
@@ -3112,6 +3240,8 @@
             searchVehicle = document.getElementById('advVehicle').value;
             const advCat = document.getElementById('advCategory');
             if (advCat) searchCategory = advCat.value;
+            const advSrc = document.getElementById('advRequestSource');
+            if (advSrc) searchRequestSource = advSrc.value;
             currentPage = 1;
             renderCategoryChips();
             fetchTrackerPage();
@@ -3123,10 +3253,13 @@
             document.getElementById('advVehicle').value = 'all';
             const advCat = document.getElementById('advCategory');
             if (advCat) advCat.value = 'all';
+            const advSrc = document.getElementById('advRequestSource');
+            if (advSrc) advSrc.value = 'all';
             searchStartDate = '';
             searchEndDate = '';
             searchVehicle = 'all';
             searchCategory = 'all';
+            searchRequestSource = 'all';
             currentPage = 1;
             renderCategoryChips();
             fetchTrackerPage();
@@ -3339,21 +3472,7 @@
 
             // Filter out items that have already been fully issued OR have not been received yet
             const activeItems = displayAll.filter(item => {
-                const getIssuedQty = (item) => {
-                    return issues.filter(is => {
-                        if (item.mrnNum && is.mrnNum) {
-                            return is.mrnNum.trim().toLowerCase() === item.mrnNum.trim().toLowerCase() &&
-                                   is.itemName.trim().toLowerCase() === item.name.trim().toLowerCase();
-                        }
-                        if (item.vehicleMachinery && is.vehicleMachinery) {
-                            return is.vehicleMachinery.trim().toLowerCase() === item.vehicleMachinery.trim().toLowerCase() &&
-                                   is.itemName.trim().toLowerCase() === item.name.trim().toLowerCase();
-                        }
-                        return is.itemName.trim().toLowerCase() === item.name.trim().toLowerCase();
-                    }).reduce((sum, is) => sum + is.qty, 0);
-                };
-
-                const issuedQty = getIssuedQty(item);
+                const issuedQty = issuedQtyForItem(item);
                 // Only received items (item.recQty > 0) can be issued, and only up to the received quantity (issuedQty < item.recQty)
                 return item.recQty > 0 && issuedQty < item.recQty;
             });
@@ -3401,9 +3520,11 @@
                     document.getElementById('issueDeskIssuedBy').value = existingIssue.issuedBy || '';
                     document.getElementById('issueDeskNotes').value = existingIssue.notes || '';
                     
-                    // Match MRN request item if possible
-                    if (existingIssue.mrnNum) {
-                        const matchedItem = displayAll.find(item => item.mrnNum === existingIssue.mrnNum && item.itemName === existingIssue.itemName);
+                    // Match MRN request item: the hard itemId link wins, then MRN + name.
+                    if (existingIssue.itemId || existingIssue.mrnNum) {
+                        const matchedItem = displayAll.find(item => existingIssue.itemId
+                            ? String(item.id) === String(existingIssue.itemId)
+                            : (item.mrnNum === existingIssue.mrnNum && item.itemName === existingIssue.itemName));
                         if (matchedItem) {
                             searchInput.value = `${matchedItem.mrnNum} - ${matchedItem.name} (${matchedItem.vehicleMachinery})`;
                             select.value = matchedItem.id;
@@ -3429,20 +3550,7 @@
                         window.location.hash = '#tracker';
                         return;
                     }
-                    const getIssuedQty = (item) => {
-                        return issues.filter(is => {
-                            if (item.mrnNum && is.mrnNum) {
-                                return is.mrnNum.trim().toLowerCase() === item.mrnNum.trim().toLowerCase() &&
-                                       is.itemName.trim().toLowerCase() === item.name.trim().toLowerCase();
-                            }
-                            if (item.vehicleMachinery && is.vehicleMachinery) {
-                                return is.vehicleMachinery.trim().toLowerCase() === item.vehicleMachinery.trim().toLowerCase() &&
-                                       is.itemName.trim().toLowerCase() === item.name.trim().toLowerCase();
-                            }
-                            return is.itemName.trim().toLowerCase() === item.name.trim().toLowerCase();
-                        }).reduce((sum, is) => sum + is.qty, 0);
-                    };
-                    const issuedQty = getIssuedQty(matchedItem);
+                    const issuedQty = issuedQtyForItem(matchedItem);
                     if (issuedQty >= matchedItem.recQty) {
                         alert("Error: This item has already been fully issued.");
                         window.location.hash = '#tracker';
@@ -4121,6 +4229,7 @@
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="text-sm font-extrabold text-slate-900 dark:text-white">${highlightMatch(item.mrnNum, searchQuery)}</div>
                             <div class="text-xs text-slate-500 dark:text-slate-455 font-semibold mt-0.5">${highlightMatch(item.vehicleMachinery, searchQuery)}</div>
+                            ${item.requestSource ? `<div class="mt-1.5"><span class="inline-flex items-center text-[9px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md border ${item.requestSource === 'Head Office' ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-400 dark:border-indigo-900/30' : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/30'}">${item.requestSource}</span></div>` : ''}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="text-sm font-bold text-slate-800 dark:text-slate-250">${highlightMatch(item.name, searchQuery)}</div>
@@ -4657,16 +4766,8 @@
                 const vehicleItems = displayAll.filter(item => item.vehicleMachinery && item.vehicleMachinery.trim() === vName);
                 const vehicleIssues = issues.filter(is => is.vehicleMachinery && is.vehicleMachinery.trim() === vName);
 
-                // Helper to match issues to an item
-                const getIssuedQty = (item) => {
-                    return vehicleIssues.filter(is => {
-                        if (item.mrnNum && is.mrnNum) {
-                            return is.mrnNum.trim().toLowerCase() === item.mrnNum.trim().toLowerCase() &&
-                                   is.itemName.trim().toLowerCase() === item.itemName.trim().toLowerCase();
-                        }
-                        return is.itemName.trim().toLowerCase() === item.itemName.trim().toLowerCase();
-                    }).reduce((sum, is) => sum + is.qty, 0);
-                };
+                // Shared matching rule (itemId link -> MRN + name -> vehicle + name)
+                const getIssuedQty = (item) => issuedQtyForItem(item);
 
                 let pendingSupplierCount = 0;
                 let pendingWorkshopCount = 0;
@@ -4849,16 +4950,8 @@
             const vehicleItems = displayAll.filter(item => item.vehicleMachinery && item.vehicleMachinery.trim() === activeVehicleName);
             const vehicleIssues = issues.filter(is => is.vehicleMachinery && is.vehicleMachinery.trim() === activeVehicleName);
 
-            // Match issues helper
-            const getIssuedQty = (item) => {
-                return vehicleIssues.filter(is => {
-                    if (item.mrnNum && is.mrnNum) {
-                        return is.mrnNum.trim().toLowerCase() === item.mrnNum.trim().toLowerCase() &&
-                               is.itemName.trim().toLowerCase() === item.itemName.trim().toLowerCase();
-                    }
-                    return is.itemName.trim().toLowerCase() === item.itemName.trim().toLowerCase();
-                }).reduce((sum, is) => sum + is.qty, 0);
-            };
+            // Shared matching rule (itemId link -> MRN + name -> vehicle + name)
+            const getIssuedQty = (item) => issuedQtyForItem(item);
 
             // Totals and spend
             let totalSpend = 0;
@@ -5117,10 +5210,30 @@
             document.getElementById('recDeskDate').value = new Date().toISOString().split('T')[0];
         }
 
+        // Where the currently selected MRN was requested from ('Local'|'Head Office'|null);
+        // drives the purchase-source pre-selection + mismatch note on the receiving desk.
+        let recDeskRequestedSource = null;
+        const PURCHASE_FOR_REQUEST = { 'Local': 'Local Purchase', 'Head Office': 'Head Office Purchase' };
+
+        function updateRecDeskMismatchNote() {
+            const note = document.getElementById('recDeskSourceMismatch');
+            if (!note) return;
+            const checked = document.querySelector('input[name="recDeskPurchaseSource"]:checked');
+            const expected = PURCHASE_FOR_REQUEST[recDeskRequestedSource];
+            if (expected && checked && checked.value !== expected) {
+                note.textContent = `Note: this item was requested from ${recDeskRequestedSource}, but you are confirming it as received via ${checked.value}.`;
+                note.classList.remove('hidden');
+            } else {
+                note.classList.add('hidden');
+            }
+        }
+
         function handleReceivingItemSelection(itemId) {
             const metaContainer = document.getElementById('recDeskItemMetadata');
             if (!itemId) {
                 metaContainer.innerHTML = 'No item selected';
+                recDeskRequestedSource = null;
+                updateRecDeskMismatchNote();
                 return;
             }
 
@@ -5130,18 +5243,33 @@
             const item = displayAll.find(i => String(i.id) === String(itemId));
             if (!item) {
                 metaContainer.innerHTML = 'Requisition item not found';
+                recDeskRequestedSource = null;
+                updateRecDeskMismatchNote();
                 return;
             }
 
             const dateGapInfo = item.recDate ? `(Last delivery on ${item.recDate})` : '(No deliveries logged yet)';
+            const reqSrcBadge = item.requestSource
+                ? `<div>Requested From: <strong class="${item.requestSource === 'Head Office' ? 'text-indigo-650 dark:text-indigo-400' : 'text-emerald-600 dark:text-emerald-400'} font-extrabold">${item.requestSource}</strong></div>`
+                : '';
             metaContainer.innerHTML = `
                 <div class="space-y-1 w-full text-xs font-semibold">
                     <div>Machinery: <strong class="text-slate-800 dark:text-white font-extrabold">${item.vehicleMachinery}</strong></div>
                     <div>Item Spec: <strong class="text-slate-800 dark:text-white font-extrabold">${item.name}</strong></div>
+                    ${reqSrcBadge}
                     <div>Fulfillment Status: <strong class="text-indigo-650 dark:text-indigo-400 font-extrabold">${item.recQty || 0} received of ${item.reqQty} requested</strong></div>
                     <div class="text-[10px] text-slate-450 dark:text-slate-500 font-medium">Requisition opened: ${item.reqDate} ${dateGapInfo}</div>
                 </div>
             `;
+
+            // Pre-select the purchase source that matches where it was requested from.
+            recDeskRequestedSource = item.requestSource || null;
+            const expected = PURCHASE_FOR_REQUEST[recDeskRequestedSource];
+            if (expected) {
+                const radio = document.querySelector(`input[name="recDeskPurchaseSource"][value="${expected}"]`);
+                if (radio) radio.checked = true;
+            }
+            updateRecDeskMismatchNote();
 
             // Auto-fill delivery qty to fulfill remaining balance by default
             const balance = Math.max(0, Math.round((item.reqQty - item.recQty) * 100) / 100);
@@ -5608,6 +5736,7 @@
             document.getElementById('editReqQtyInput').value = item.reqQty || '';
             document.getElementById('editReqCategory').value = item.category || '';
             document.getElementById('editReqPassword').value = ''; // Reset password field
+            document.querySelectorAll('input[name="editReqSource"]').forEach(r => { r.checked = (r.value === item.requestSource); });
 
             modal.classList.remove('hidden');
         }
@@ -5635,8 +5764,10 @@
             const itemDesc = document.getElementById('editReqDesc').value.trim();
             const reqQty = parseFloat(document.getElementById('editReqQtyInput').value);
             const category = document.getElementById('editReqCategory').value;
+            const editSrcEl = document.querySelector('input[name="editReqSource"]:checked');
+            const requestSource = editSrcEl ? editSrcEl.value : null;
 
-            const updateData = { mrnNum, reqDate, vehicleMachinery, itemName, itemDesc, reqQty, category };
+            const updateData = { mrnNum, reqDate, vehicleMachinery, itemName, itemDesc, reqQty, category, requestSource };
 
             await syncService.enqueue(
                 'UPDATE_ITEM',
@@ -5673,8 +5804,14 @@
             const category = document.getElementById('itemCategory').value;
             const jcLinkEl = document.getElementById('jcLinkSelect');
             const jobCardId = jcLinkEl && jcLinkEl.value ? Number(jcLinkEl.value) : undefined;
+            const reqSourceEl = document.querySelector('input[name="reqSource"]:checked');
+            if (!reqSourceEl) {
+                alert('Please choose where this request is purchased from: Local or Head Office.');
+                return;
+            }
+            const requestSource = reqSourceEl.value;
 
-            const newItem = { mrnNum, reqDate, vehicleMachinery, itemName, itemDesc, reqQty, category };
+            const newItem = { mrnNum, reqDate, vehicleMachinery, itemName, itemDesc, reqQty, category, requestSource };
             if (jobCardId) newItem.jobCardId = jobCardId;
 
             await syncService.enqueue(
@@ -5693,6 +5830,7 @@
                         itemDesc,
                         reqQty,
                         category: category || '',
+                        requestSource,
                         recQty: 0,
                         recDate: null,
                         purchaseSource: '',
@@ -5727,7 +5865,11 @@
             const type = document.querySelector('input[name="recDeskTransactionType"]:checked').value;
             
             const checkedSourceEl = document.querySelector('input[name="recDeskPurchaseSource"]:checked');
-            const source = checkedSourceEl ? checkedSourceEl.value : 'Direct Purchase';
+            if (!checkedSourceEl) {
+                alert('Please confirm the purchase source: Local Purchase or Head Office Purchase.');
+                return;
+            }
+            const source = checkedSourceEl.value;
 
             const qty = type === 'Return' ? -Math.abs(rawQty) : Math.abs(rawQty);
 
@@ -5775,10 +5917,14 @@
 
             receivingDeskForm.reset();
             document.getElementById('recDeskDate').value = new Date().toISOString().split('T')[0];
-            
+            recDeskRequestedSource = null;
+            updateRecDeskMismatchNote();
+
             // Redirect to MRN Tracker
             window.location.hash = '#tracker';
         });
+        document.querySelectorAll('input[name="recDeskPurchaseSource"]').forEach(r =>
+            r.addEventListener('change', updateRecDeskMismatchNote));
 
         // Pricing forms submissions
         const pricingAuditForm = document.getElementById('pricingAuditForm');
@@ -6090,7 +6236,7 @@
 
                         const src = (r.purchaseSource || '').trim().toLowerCase();
                         let category = 'other';
-                        if (src === 'direct purchase' || src === 'head office' || src === 'pre-ordered') {
+                        if (src === 'head office purchase' || src === 'direct purchase' || src === 'head office' || src === 'pre-ordered') {
                             category = 'headOffice';
                             dailyData[date].hoValue += cost;
                         } else if (src === 'local store' || src === 'local purchase') {
@@ -6222,7 +6368,7 @@
                             <div class="flex-grow max-w-md md:mx-6">
                                 <div class="w-full bg-slate-100 dark:bg-slate-800/80 rounded-full h-2 overflow-hidden flex">
                                     <div class="bg-indigo-650 dark:bg-indigo-400 h-full transition-all" style="width: ${hoPct}%" title="Head Office: ${hoPct}%"></div>
-                                    <div class="bg-emerald-500 dark:bg-emerald-450 h-full transition-all" style="width: ${lpPct}%" title="Local Store: ${lpPct}%"></div>
+                                    <div class="bg-emerald-500 dark:bg-emerald-450 h-full transition-all" style="width: ${lpPct}%" title="Local Purchase: ${lpPct}%"></div>
                                     <div class="bg-slate-400 dark:bg-slate-600 h-full transition-all" style="width: ${othPct}%" title="Other: ${othPct}%"></div>
                                 </div>
                                 <div class="flex justify-between items-center mt-2 text-[10px] font-bold text-slate-455 dark:text-slate-500">
@@ -6441,7 +6587,7 @@
                     
                     const recQtyVal = idxRecQty !== -1 && row[idxRecQty] ? parseFloat(row[idxRecQty].replace(/['"]/g, '')) || 0 : 0;
                     const recDateVal = idxRecDate !== -1 && row[idxRecDate] ? (row[idxRecDate].replace(/['"]/g, '') || null) : null;
-                    const sourceVal = idxSource !== -1 && row[idxSource] ? row[idxSource].replace(/['"]/g, '') : '';
+                    const sourceVal = canonicalSourceText(idxSource !== -1 && row[idxSource] ? row[idxSource].replace(/['"]/g, '') : '');
 
                     const grnVal = idxGRN !== -1 && row[idxGRN] ? row[idxGRN].replace(/['"]/g, '').trim() : '';
                     const invNumVal = idxInvNum !== -1 && row[idxInvNum] ? row[idxInvNum].replace(/['"]/g, '').trim() : '';
@@ -6575,23 +6721,8 @@
                             return;
                         }
 
-                        // Calculate other issues of this item (excluding current issue if editing)
-                        const getOtherIssuedQty = (item) => {
-                            return issues.filter(is => {
-                                if (id && String(is.id) === String(id)) return false; // exclude current issue being edited
-                                if (item.mrnNum && is.mrnNum) {
-                                    return is.mrnNum.trim().toLowerCase() === item.mrnNum.trim().toLowerCase() &&
-                                           is.itemName.trim().toLowerCase() === item.name.trim().toLowerCase();
-                                }
-                                if (item.vehicleMachinery && is.vehicleMachinery) {
-                                    return is.vehicleMachinery.trim().toLowerCase() === item.vehicleMachinery.trim().toLowerCase() &&
-                                           is.itemName.trim().toLowerCase() === item.name.trim().toLowerCase();
-                                }
-                                return is.itemName.trim().toLowerCase() === item.name.trim().toLowerCase();
-                            }).reduce((sum, is) => sum + is.qty, 0);
-                        };
-
-                        const otherIssuedQty = getOtherIssuedQty(item);
+                        // Other issues of this item (excluding the one being edited)
+                        const otherIssuedQty = issuedQtyForItem(item, id || null);
                         const remainingToIssue = Math.round((item.recQty - otherIssuedQty) * 100) / 100;
                         if (qtyVal > remainingToIssue) {
                             alert(`Error: Cannot issue ${qtyVal} units. Remaining received stock for this request in store is only ${remainingToIssue} units.`);
@@ -6610,7 +6741,10 @@
                     mrnNum: document.getElementById('issueDeskMrn').value.trim(),
                     issuedTo: document.getElementById('issueDeskIssuedTo').value.trim(),
                     issuedBy: document.getElementById('issueDeskIssuedBy').value.trim(),
-                    notes: document.getElementById('issueDeskNotes').value.trim()
+                    notes: document.getElementById('issueDeskNotes').value.trim(),
+                    // Hard link to the request line being drawn from — the server
+                    // validates stock against it and it survives item renames.
+                    itemId: itemId ? Number(itemId) : null
                 };
                 try {
                     const res = await fetch(id ? ('/api/issues/' + id) : '/api/issues', {
@@ -6618,7 +6752,12 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
-                    if (!res.ok) throw new Error('failed');
+                    if (!res.ok) {
+                        let msg = 'Failed to save issue. Please try again.';
+                        try { const errBody = await res.json(); if (errBody && errBody.error) msg = errBody.error; } catch (_) {}
+                        alert(msg);
+                        return;
+                    }
                     window.location.hash = '#issued';
                     await loadIssues();
                     refreshIssueBadge();
@@ -6664,7 +6803,17 @@
                         await syncService.processQueue();
                     }
                 } else {
-                    await loadAllData();
+                    // Cheap change check first: only re-download the dataset when
+                    // the server-side change signature actually moved.
+                    try {
+                        const sum = await (await fetch('/api/summary')).json();
+                        if (sum && sum.version !== lastDataVersion) {
+                            lastDataVersion = sum.version;
+                            await loadAllData();
+                        }
+                    } catch (e) {
+                        await loadAllData(); // fall back to the old behaviour if /api/summary fails
+                    }
                 }
             }
         }, 15000); // Poll every 15 seconds
@@ -7932,7 +8081,7 @@
                 const data = await res.json();
                 if (!res.ok) { if (err) { err.textContent = data.error || 'Could not add item.'; err.classList.remove('hidden'); } return; }
                 if (price && Number(price) > 0) {
-                    await fetch('/api/items/' + data.id + '/receipts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qty: qty || 1, transactionType: 'Receive', unitPrice: Number(price), deliveryDate: today, purchaseSource: 'Local Store' }) });
+                    await fetch('/api/items/' + data.id + '/receipts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qty: qty || 1, transactionType: 'Receive', unitPrice: Number(price), deliveryDate: today, purchaseSource: 'Local Purchase' }) });
                 }
                 openJobCardDetail(jobCardId);
             } catch (e) { if (err) { err.textContent = 'Network error.'; err.classList.remove('hidden'); } }
@@ -8137,6 +8286,89 @@
                 </tr>`).join('') : '<tr><td colspan="5" class="px-6 py-8 text-center text-sm font-semibold text-slate-400">No received deliveries in range.</td></tr>';
             const hint = document.getElementById('dashDailyHint');
             if (hint) hint.textContent = daily.length ? `${daily.length} day${daily.length !== 1 ? 's' : ''}` : '';
+
+            // Today's purchase totals (fixed windows, independent of the date range filter)
+            if (o.todays) {
+                set('kpiTodayLocal', dCur(o.todays.today.local));
+                set('kpiTodayHo', dCur(o.todays.today.headOffice));
+                set('kpiYdayLocal', 'Yesterday: ' + dCur(o.todays.yesterday.local));
+                set('kpiYdayHo', 'Yesterday: ' + dCur(o.todays.yesterday.headOffice));
+            }
+
+            // Monthly expenses (chart + table)
+            const monthly = (o.monthly || []).slice().reverse(); // oldest -> newest for the chart
+            const mctx = document.getElementById('dashMonthlyChart');
+            if (mctx && typeof Chart !== 'undefined') {
+                if (dashMonthlyChartInstance) dashMonthlyChartInstance.destroy();
+                dashMonthlyChartInstance = new Chart(mctx, {
+                    type: 'bar',
+                    data: {
+                        labels: monthly.map((m) => m.month),
+                        datasets: [
+                            { label: 'Local Purchase', data: monthly.map((m) => m.local), backgroundColor: '#10b981', stack: 's' },
+                            { label: 'Head Office Purchase', data: monthly.map((m) => m.headOffice), backgroundColor: '#4f46e5', stack: 's' },
+                            { label: 'Other', data: monthly.map((m) => m.other), backgroundColor: '#94a3b8', stack: 's' },
+                        ],
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true } }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } } }
+                });
+            }
+            const mBody = document.getElementById('dashMonthlyBody');
+            if (mBody) mBody.innerHTML = (o.monthly || []).length ? o.monthly.map((m) => `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <td class="px-6 py-2.5 font-bold text-slate-700 dark:text-slate-200">${m.month}</td>
+                    <td class="px-6 py-2.5 text-right text-indigo-700 dark:text-indigo-400 font-semibold">${m.headOffice ? dCur(m.headOffice) : '—'}</td>
+                    <td class="px-6 py-2.5 text-right text-emerald-600 dark:text-emerald-400 font-semibold">${m.local ? dCur(m.local) : '—'}</td>
+                    <td class="px-6 py-2.5 text-right text-slate-500 font-semibold">${m.other ? dCur(m.other) : '—'}</td>
+                    <td class="px-6 py-2.5 text-right font-extrabold text-slate-900 dark:text-white">${dCur(m.total)}</td>
+                </tr>`).join('') : '<tr><td colspan="5" class="px-6 py-8 text-center text-sm font-semibold text-slate-400">No priced deliveries yet.</td></tr>';
+
+            // Pending items split
+            dashPendingData = o.pending || { local: [], headOffice: [], unspecified: [], counts: { local: 0, headOffice: 0, unspecified: 0 } };
+            set('kpiPendingLocal', dashPendingData.counts.local);
+            set('kpiPendingHo', dashPendingData.counts.headOffice);
+            set('pendCountLocal', dashPendingData.counts.local);
+            set('pendCountHo', dashPendingData.counts.headOffice);
+            set('pendCountUnspec', dashPendingData.counts.unspecified);
+            renderPendingTable();
+        }
+
+        // ---- Pending-items tabs ------------------------------------------------
+        let dashMonthlyChartInstance = null;
+        let dashPendingData = null;
+        let dashPendingTab = 'headOffice';
+        function setPendingTab(tab) {
+            dashPendingTab = tab;
+            [['pendTabHeadOffice', 'headOffice'], ['pendTabLocal', 'local'], ['pendTabUnspecified', 'unspecified']].forEach(([id, key], i) => {
+                const el = document.getElementById(id); if (!el) return;
+                el.className = 'px-3 py-1.5 text-xs font-bold ' + (dashPendingTab === key ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300') + (i > 0 ? ' border-l border-slate-200 dark:border-slate-700' : '');
+            });
+            renderPendingTable();
+        }
+        function gotoPendingItem(mrn) {
+            window.location.hash = '#tracker';
+            const si = document.getElementById('searchInput');
+            if (si && mrn) { si.value = mrn; si.dispatchEvent(new Event('input')); }
+        }
+        function renderPendingTable() {
+            const body = document.getElementById('dashPendingBody');
+            if (!body || !dashPendingData) return;
+            const rows = dashPendingData[dashPendingTab] || [];
+            const count = (dashPendingData.counts || {})[dashPendingTab] || 0;
+            body.innerHTML = rows.length ? rows.map((p) => {
+                const overdue = (p.ageDays || 0) > 7;
+                const age = (p.ageDays === null || p.ageDays === undefined || p.ageDays < 0 || p.ageDays > 3000) ? '—' : p.ageDays;
+                return `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer" onclick="gotoPendingItem(this.dataset.mrn)" data-mrn="${jcEsc(p.mrnNum || '')}">
+                    <td class="px-6 py-2.5 font-extrabold text-indigo-700 dark:text-indigo-400">${jcEsc(p.mrnNum || '—')}</td>
+                    <td class="px-6 py-2.5 font-semibold text-slate-700 dark:text-slate-200">${jcEsc(p.itemName || '')}</td>
+                    <td class="px-6 py-2.5 text-slate-500 font-semibold">${jcEsc(p.vehicleMachinery || '')}</td>
+                    <td class="px-6 py-2.5 text-slate-500 font-semibold">${jcEsc(p.reqDate || '')}</td>
+                    <td class="px-6 py-2.5 text-right font-extrabold text-slate-900 dark:text-white">${p.outstandingQty} <span class="text-[10px] text-slate-400 font-semibold">of ${p.reqQty}</span></td>
+                    <td class="px-6 py-2.5 text-right font-bold ${overdue ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500'}">${age}</td>
+                </tr>`;
+            }).join('') + (count > rows.length ? `<tr><td colspan="6" class="px-6 py-3 text-center text-xs font-semibold text-slate-400">Showing first ${rows.length} of ${count} — use the MRN Tracker "Pending Delivery" tab for the full list.</td></tr>` : '')
+                : '<tr><td colspan="6" class="px-6 py-8 text-center text-sm font-semibold text-slate-400">Nothing pending in this bucket. 🎉</td></tr>';
         }
     </script>
 

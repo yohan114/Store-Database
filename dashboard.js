@@ -13,17 +13,21 @@
 const db = require('./db');
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
-const HEAD_OFFICE = ['direct purchase', 'head office', 'pre-ordered'];
-const LOCAL = ['local store', 'local purchase'];
+// Canonical values are 'Head Office Purchase' / 'Local Purchase'; the older
+// spellings stay in the lists so rows written by legacy clients still classify.
+const HEAD_OFFICE = ['head office purchase', 'direct purchase', 'head office', 'pre-ordered'];
+const LOCAL = ['local purchase', 'local store'];
 
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
 const yearStart = () => `${new Date().getFullYear()}-01-01`;
-const today = () => new Date().toISOString().slice(0, 10);
+const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const today = () => localISO(new Date());
+const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return localISO(d); };
 
 // SQL CASE that classifies a receipt's purchaseSource into an origin bucket.
 const ORIGIN_CASE = `CASE
-    WHEN LOWER(TRIM(r.purchaseSource)) IN ('direct purchase','head office','pre-ordered') THEN 'headOffice'
-    WHEN LOWER(TRIM(r.purchaseSource)) IN ('local store','local purchase') THEN 'local'
+    WHEN LOWER(TRIM(r.purchaseSource)) IN (${HEAD_OFFICE.map((v) => `'${v}'`).join(',')}) THEN 'headOffice'
+    WHEN LOWER(TRIM(r.purchaseSource)) IN (${LOCAL.map((v) => `'${v}'`).join(',')}) THEN 'local'
     ELSE 'other' END`;
 
 function receiptWhere(f) {
@@ -74,6 +78,50 @@ function dailySplit(f, limit = 60) {
     return [...byDay.values()].slice(0, limit);
 }
 
+// Month-by-month expense split for the last `limit` months (newest first).
+function monthlySplit(f, limit = 12) {
+    const w = receiptWhere(f);
+    const rows = db.all(
+        `SELECT SUBSTR(r.deliveryDateISO,1,7) AS month, ${ORIGIN_CASE} AS origin, SUM(r.qty*r.unitPrice) AS val
+         FROM receipts r JOIN items i ON i.id=r.itemId
+         WHERE ${w.sql} AND r.deliveryDateISO != '' AND r.deliveryDateISO IS NOT NULL
+         GROUP BY month, origin ORDER BY month DESC`, w.params);
+    const byMonth = new Map();
+    rows.forEach((x) => {
+        if (!byMonth.has(x.month)) byMonth.set(x.month, { month: x.month, local: 0, headOffice: 0, other: 0, total: 0 });
+        const m = byMonth.get(x.month);
+        m[x.origin] = round2(x.val);
+        m.total = round2(m.total + x.val);
+    });
+    return [...byMonth.values()].slice(0, limit);
+}
+
+// Requests not yet fully delivered, split by where they were requested from.
+function pendingItems(f, limit = 100) {
+    const where = [];
+    const params = [];
+    if (f.category) { where.push('i.category = ?'); params.push(f.category); }
+    if (f.vehicle) { where.push('i.vehicleMachinery = ?'); params.push(f.vehicle); }
+    const clause = where.length ? 'AND ' + where.join(' AND ') : '';
+    const rows = db.all(
+        `SELECT i.id, i.mrnNum, i.itemName, i.vehicleMachinery, i.reqDate, i.reqDateISO, i.requestSource,
+                i.reqQty, COALESCE(SUM(r.qty),0) AS recQty,
+                ROUND(i.reqQty - COALESCE(SUM(r.qty),0), 2) AS outstandingQty,
+                CAST(JULIANDAY('now') - JULIANDAY(NULLIF(i.reqDateISO,'')) AS INTEGER) AS ageDays
+         FROM items i LEFT JOIN receipts r ON r.itemId = i.id
+         WHERE 1=1 ${clause}
+         GROUP BY i.id HAVING i.reqQty - COALESCE(SUM(r.qty),0) > 0.005
+         ORDER BY NULLIF(i.reqDateISO,'') ASC`, params);
+    const bucket = (r) => (r.requestSource === 'Local' ? 'local' : r.requestSource === 'Head Office' ? 'headOffice' : 'unspecified');
+    const out = { local: [], headOffice: [], unspecified: [], counts: { local: 0, headOffice: 0, unspecified: 0, total: rows.length } };
+    rows.forEach((r) => {
+        const b = bucket(r);
+        out.counts[b] += 1;
+        if (out[b].length < limit) out[b].push(r);
+    });
+    return out;
+}
+
 function supplierSpend(f, limit = 12) {
     const w = receiptWhere(f);
     const rows = db.all(
@@ -121,6 +169,12 @@ function build(query = {}) {
         },
         received: splitByOrigin(f),
         daily: dailySplit(f),
+        monthly: monthlySplit(f),
+        todays: {
+            today: splitByOrigin({ ...nonDate, startDate: today(), endDate: today() }),
+            yesterday: splitByOrigin({ ...nonDate, startDate: yesterday(), endDate: yesterday() }),
+        },
+        pending: pendingItems(f),
         suppliers: supplierSpend(f),
         jobs: jobKpis(),
     };

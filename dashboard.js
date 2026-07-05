@@ -20,11 +20,22 @@ const round2 = costing.round2;
 const HEAD_OFFICE = costing.HEAD_OFFICE;
 const LOCAL = costing.LOCAL;
 
-const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
-const yearStart = () => `${new Date().getFullYear()}-01-01`;
-const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const today = () => localISO(new Date());
-const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return localISO(d); };
+// Calendar date in the business timezone, shifted by `offsetDays`, as YYYY-MM-DD.
+// Computed in config.BUSINESS_TZ so day boundaries match the day-only data even
+// when the server runs in UTC (review finding: timezone).
+function businessISO(offsetDays = 0) {
+    const todayStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: config.BUSINESS_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());                       // 'YYYY-MM-DD' in the business zone
+    if (!offsetDays) return todayStr;
+    const d = new Date(todayStr + 'T12:00:00Z'); // noon UTC avoids DST/offset edges
+    d.setUTCDate(d.getUTCDate() + offsetDays);
+    return d.toISOString().slice(0, 10);
+}
+const monthStart = () => `${businessISO().slice(0, 7)}-01`;
+const yearStart = () => `${businessISO().slice(0, 4)}-01-01`;
+const today = () => businessISO(0);
+const yesterday = () => businessISO(-1);
 
 // SQL CASE that classifies a receipt's purchaseSource into an origin bucket.
 const ORIGIN_CASE = costing.originCaseSql('r.purchaseSource');

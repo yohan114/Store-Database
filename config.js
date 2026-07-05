@@ -36,4 +36,11 @@ module.exports = {
     DASHBOARD_MONTHLY_LIMIT: 12,          // months in the monthly split
     DASHBOARD_PENDING_LIMIT: 100,         // rows per pending-source bucket
     DASHBOARD_SUPPLIER_LIMIT: 12,         // suppliers in the spend breakdown
+
+    // --- business timezone -----------------------------------------------
+    // Day-only data (reqDateISO etc.) is in local business time; the Today /
+    // Yesterday / MTD boundaries are computed in this zone so a UTC server near
+    // midnight doesn't attribute spend to the wrong calendar day. Override with
+    // BUSINESS_TZ. Default Asia/Colombo (UTC+5:30, the deployment's locale).
+    BUSINESS_TZ: process.env.BUSINESS_TZ || 'Asia/Colombo',
 };

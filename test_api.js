@@ -435,6 +435,8 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     let { body: itList } = await j(await fetch(BASE + '/api/items?page=1&limit=5'));
     ok(Array.isArray(itList.items) && itList.items.every((it) => typeof it.recQty === 'number'),
         'GET /api/items aggregate returns numeric recQty per row');
+    // P3 — /api/health is public + reports liveness
+    { const r = await _fetch(BASE + '/api/health'); const b = await r.json(); ok(r.status === 200 && b.status === 'ok' && typeof b.uptimeSeconds === 'number', 'GET /api/health returns ok (public, no auth)'); }
 
     // P1 (downgraded) — editing an issue preserves its manual price (no silent re-derive)
     await j(await fetch(BASE + '/api/issues/' + jcIssue.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ issueDate: '2026-06-10', vehicleMachinery: 'TEST-VH', itemName: 'JC Consumable', qty: 6, jobCardId: jcId }) }));
@@ -553,6 +555,17 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     const cTM = await loginAs('tmanager', 'changeme123');
     const cOM = await loginAs('opsmanager', 'changeme123');
     ok(!!cTO && !!cTM && !!cOM, 'seeded approver logins (transport / tmanager / opsmanager)');
+
+    // P3 — reopen→resubmit preserves the original reqNo (no re-mint / orphaned audits)
+    {
+        let a = await jr(cTO, '/api/job-requests', { method: 'POST', body: JSON.stringify({ title: 'Reopen test', vehicleMachinery: 'ROPEN-1', type: 'INTERNAL', submit: true }) });
+        const rid = a.body.request.id, firstReqNo = a.body.request.reqNo;
+        await jr(cTM, `/api/job-requests/${rid}/action`, { method: 'POST', body: JSON.stringify({ action: 'tmReject', note: 'nope' }) });
+        await jr(cTO, `/api/job-requests/${rid}/action`, { method: 'POST', body: JSON.stringify({ action: 'reopen' }) });
+        let b = await jr(cTO, `/api/job-requests/${rid}/action`, { method: 'POST', body: JSON.stringify({ action: 'submit' }) });
+        ok(b.body.request.reqNo === firstReqNo, 'reopen→resubmit keeps the original reqNo', 'reqNo=' + (b.body.request && b.body.request.reqNo));
+        await jr(COOKIE, `/api/job-requests/${rid}`, { method: 'DELETE', headers: { Cookie: COOKIE } });
+    }
 
     // Transport Officer raises + submits
     let rr = await jr(cTO, '/api/job-requests', { method: 'POST', body: JSON.stringify({ title: 'Test op job', details: 'x', vehicleMachinery: 'OPTEST-1', type: 'INTERNAL', submit: true }) });

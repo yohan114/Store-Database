@@ -259,7 +259,7 @@ function renderOpsAdmin() {
     panel.innerHTML = `
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5">
             <div class="flex items-center justify-between mb-3"><h3 class="text-sm font-extrabold text-slate-700 dark:text-slate-200">Users &amp; Roles</h3>
-                <button onclick="opAddUserPrompt()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add user</button></div>
+                <button onclick="opAddUserModal()" class="text-xs font-bold text-indigo-600 dark:text-indigo-400">+ Add user</button></div>
             <div id="opsUsersList" class="space-y-1.5 text-xs"></div>
         </div>
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5">
@@ -295,19 +295,87 @@ async function opLoadOutbox() {
             <div class="text-[10px] text-slate-400 truncate">${opEsc(o.subject)}${o.reqNo ? ' · ' + opEsc(o.reqNo) : ''}</div>
         </div>`).join('') || '<span class="text-slate-400 italic">No e-mails yet.</span>';
 }
-async function opAddUserPrompt() {
-    const username = prompt('New username:'); if (!username) return;
-    const name = prompt('Full name:') || username;
-    const role = prompt('Role (TRANSPORT_OFFICER / TRANSPORT_MANAGER / OPERATIONAL_MANAGER / TECHNICIAN / ADMIN):', 'TRANSPORT_OFFICER') || 'TRANSPORT_OFFICER';
-    const email = prompt('E-mail (optional):') || '';
-    const { ok, body } = await opJSON('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, name, email, roles: [role], password: 'changeme123' }) });
-    if (!ok) { alert((body && body.error) || 'Could not add user.'); return; }
-    alert('User created with temporary password: changeme123'); opLoadUsers();
+// A strong, readable one-time password (replaces the hardcoded 'changeme123').
+function opGenPassword() {
+    const rand = Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 4).toUpperCase();
+    return `Ecms-${rand}!`;
+}
+const opEmailValid = (v) => !v || /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(String(v).trim());
+
+// Add-user modal (replaces the prompt()/alert() flow): role checkboxes, e-mail
+// validation, and an initial password generated + shown once (review finding).
+function opAddUserModal() {
+    opCloseUserModal();
+    const roleLabels = (opsMeta && opsMeta.roleLabels) || {
+        TRANSPORT_OFFICER: 'Transport Officer', TRANSPORT_MANAGER: 'Transport Manager',
+        OPERATIONAL_MANAGER: 'Operational Manager', ASST_MECH_ENGINEER: 'Assistant Mechanical Engineer',
+        MECH_ENGINEER: 'Mechanical Engineer', TECHNICIAN: 'Workshop Technician', ADMIN: 'Administrator',
+    };
+    const roleRows = Object.keys(roleLabels).map((r) => `
+        <label class="flex items-center gap-2 py-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <input type="checkbox" class="opNewRole" value="${opEsc(r)}"> ${opEsc(roleLabels[r])}</label>`).join('');
+    const wrap = document.createElement('div');
+    wrap.id = 'opUserModal';
+    wrap.className = 'fixed inset-0 z-[60] flex items-center justify-center p-4';
+    wrap.innerHTML = `
+        <div class="absolute inset-0 bg-slate-900/50" onclick="opCloseUserModal()"></div>
+        <div class="relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-3"><h3 class="text-sm font-extrabold text-slate-700 dark:text-slate-200">Add user</h3>
+                <button onclick="opCloseUserModal()" class="text-slate-400 hover:text-slate-600 text-lg leading-none">&times;</button></div>
+            <div class="space-y-2.5">
+                <div><label class="opl">Username</label><input id="opNewUsername" class="opi" placeholder="e.g. jsilva" autocomplete="off"></div>
+                <div><label class="opl">Full name</label><input id="opNewName" class="opi" placeholder="Full name"></div>
+                <div><label class="opl">E-mail (optional)</label><input id="opNewEmail" class="opi" placeholder="name@enc.lk"></div>
+                <div><label class="opl">Roles</label><div class="mt-1 grid grid-cols-1 gap-0.5 border border-slate-150 dark:border-slate-800 rounded-lg px-3 py-2">${roleRows}</div></div>
+            </div>
+            <div id="opNewUserMsg" class="text-[11px] font-semibold text-rose-500 mt-2 min-h-[16px]"></div>
+            <div class="flex justify-end gap-2 mt-2">
+                <button onclick="opCloseUserModal()" class="px-3 py-2 rounded-lg text-xs font-bold text-slate-500">Cancel</button>
+                <button onclick="opSubmitNewUser()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold">Create user</button>
+            </div>
+        </div>`;
+    document.body.appendChild(wrap);
+}
+function opCloseUserModal() { const m = document.getElementById('opUserModal'); if (m) m.remove(); }
+async function opSubmitNewUser() {
+    const username = (document.getElementById('opNewUsername') as any).value.trim();
+    const name = (document.getElementById('opNewName') as any).value.trim();
+    const email = (document.getElementById('opNewEmail') as any).value.trim();
+    const roles = Array.from(document.querySelectorAll('.opNewRole') as any).filter((c: any) => c.checked).map((c: any) => c.value);
+    const msg = document.getElementById('opNewUserMsg');
+    const fail = (t) => { if (msg) msg.textContent = t; };
+    if (!username) return fail('Username is required.');
+    if (!roles.length) return fail('Choose at least one role.');
+    if (!opEmailValid(email)) return fail('That e-mail address looks invalid.');
+    const password = opGenPassword();
+    const { ok, body } = await opJSON('/api/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, name, email, roles, password }) });
+    if (!ok) return fail((body && body.error) || 'Could not add user.');
+    opCloseUserModal();
+    opShowPasswordOnce(`User “${username}” created.`, password);
+    opLoadUsers();
 }
 async function opResetPwd(id) {
-    const pwd = prompt('New temporary password (min 6 chars):', 'changeme123'); if (!pwd) return;
-    const { ok, body } = await opJSON('/api/users/' + id + '/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd }) });
-    alert(ok ? 'Password reset.' : ((body && body.error) || 'Failed.'));
+    if (!confirm('Reset this user’s password to a new temporary one?')) return;
+    const password = opGenPassword();
+    const { ok, body } = await opJSON('/api/users/' + id + '/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+    if (!ok) { alert((body && body.error) || 'Failed.'); return; }
+    opShowPasswordOnce('Password reset.', password);
+}
+// Show a generated password ONCE (it is never stored client-side or re-shown).
+function opShowPasswordOnce(title, password) {
+    opCloseUserModal();
+    const wrap = document.createElement('div');
+    wrap.id = 'opUserModal';
+    wrap.className = 'fixed inset-0 z-[60] flex items-center justify-center p-4';
+    wrap.innerHTML = `
+        <div class="absolute inset-0 bg-slate-900/50" onclick="opCloseUserModal()"></div>
+        <div class="relative bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xl w-full max-w-sm p-5 text-center">
+            <div class="text-sm font-extrabold text-slate-700 dark:text-slate-200 mb-1">${opEsc(title)}</div>
+            <div class="text-[11px] text-slate-500 mb-3">Copy the initial password now — it is shown only once and the user must change it on first login.</div>
+            <div class="font-mono text-base font-black tracking-wide bg-slate-100 dark:bg-slate-800 rounded-lg py-2.5 select-all">${opEsc(password)}</div>
+            <button onclick="opCloseUserModal()" class="mt-4 px-4 py-2 rounded-lg bg-indigo-600 text-white text-xs font-bold">Done</button>
+        </div>`;
+    document.body.appendChild(wrap);
 }
 async function opSaveStandingCc() {
     const v = (document.getElementById('opsStandingCc') as any).value.trim();

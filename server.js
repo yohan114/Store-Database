@@ -139,6 +139,17 @@ app.post('/api/account/password', auth.requireApiAuth, (req, res) => {
     res.json({ success: true });
 });
 
+// ---- Health check (public) — for a supervisor / uptime probe --------------
+// Cheap liveness + a trivial DB read; returns 503 if the database is unreachable.
+app.get('/api/health', (req, res) => {
+    try {
+        dbApi.get('SELECT 1 AS ok');
+        res.json({ status: 'ok', engine: dbApi.ENGINE, uptimeSeconds: Math.round(process.uptime()) });
+    } catch (e) {
+        res.status(503).json({ status: 'error', error: 'database unavailable' });
+    }
+});
+
 // ---- Gate everything else behind authentication ---------------------------
 app.use('/api', auth.requireApiAuth);
 app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res) => {

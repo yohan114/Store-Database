@@ -152,7 +152,10 @@ function applyEffect(effect, req, user, note) {
     };
     switch (effect) {
         case 'submit':
-            set({ reqNo: genReqNo(), requestedAt: nowISO() });
+            // Assign reqNo only on FIRST submit — a reopen→resubmit must keep the
+            // original number so prior audits/notifications aren't orphaned
+            // (review finding: reopen re-mints reqNo).
+            set(req.reqNo ? { requestedAt: nowISO() } : { reqNo: genReqNo(), requestedAt: nowISO() });
             notifications.notifyRoles([R.TRANSPORT_MANAGER], get(req.id),
                 `New job request ${get(req.id).reqNo} awaits your approval.`);
             break;
@@ -209,9 +212,13 @@ function transition(id, action, body, user) {
     const note = body && body.note;
     if (t.needNote && !s(note)) return { error: 'A reason is required.', status: 400 };
     const from = req.status;
-    if (t.to !== req.status) db.run('UPDATE job_requests SET status=?, updatedAt=? WHERE id=?', [t.to, nowISO(), id]);
-    if (t.effect) applyEffect(t.effect, req, user, note);
-    audit(id, user, action, from, t.to, note);
+    // Status change + side-effects + audit are one atomic unit: a mid-effect
+    // throw must not leave e.g. APPROVED with no audit row (review: atomicity).
+    db.transaction(() => {
+        if (t.to !== req.status) db.run('UPDATE job_requests SET status=?, updatedAt=? WHERE id=?', [t.to, nowISO(), id]);
+        if (t.effect) applyEffect(t.effect, req, user, note);
+        audit(id, user, action, from, t.to, note);
+    });
     return { request: get(id) };
 }
 

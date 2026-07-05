@@ -113,7 +113,31 @@
         .sidebar-collapsed .sidebar-icon {
             margin-right: 0 !important;
         }
-        
+
+        /* Mobile: the sidebar becomes an off-canvas drawer so a phone user can
+           actually switch sections (the desktop width-collapse does nothing on
+           mobile). It sits off-screen until the hamburger adds .mobile-open. */
+        @media (max-width: 767px) {
+            aside.app-sidebar {
+                display: flex !important;      /* override Tailwind `hidden` */
+                position: fixed;
+                top: 0; bottom: 0; left: 0;
+                width: 17rem; max-width: 85vw;
+                transform: translateX(-100%);
+                z-index: 50;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+            }
+            aside.app-sidebar.mobile-open { transform: translateX(0); }
+        }
+        #sidebarBackdrop { display: none; }
+        #sidebarBackdrop.show {
+            display: block;
+            position: fixed; inset: 0;
+            background: rgba(15, 23, 42, 0.5);
+            z-index: 40;
+        }
+        @media (min-width: 768px) { #sidebarBackdrop.show { display: none; } }
+
         /* Highlight match style */
         .search-highlight {
             background-color: rgba(245, 158, 11, 0.25);
@@ -250,9 +274,11 @@
         </div>
     </header>
 
+    <!-- Mobile off-canvas backdrop (tap to close the drawer) -->
+    <div id="sidebarBackdrop" onclick="closeMobileSidebar()"></div>
     <div class="flex flex-1 overflow-hidden">
         <!-- Left Navigation Sidebar -->
-        <aside class="sidebar-transition w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-850 flex flex-col overflow-y-auto shrink-0 hidden md:flex z-10 shadow-sm relative transition-colors duration-300">
+        <aside class="app-sidebar sidebar-transition w-72 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-850 flex flex-col overflow-y-auto shrink-0 hidden md:flex z-10 shadow-sm relative transition-colors duration-300">
             <!-- Navigation Links -->
             <nav class="p-4 space-y-2 shrink-0" id="sidebarNav">
                 <a href="#operations" id="nav-operations" class="sidebar-btn w-full flex items-center justify-between px-3.5 py-3 text-slate-655 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-semibold rounded-2xl transition-all duration-200 border border-transparent outline-none">

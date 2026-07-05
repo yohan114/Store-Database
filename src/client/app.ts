@@ -346,11 +346,28 @@
         }
 
         // Sidebar Collapse Logic
+        // On phones the sidebar is an off-canvas drawer (it is display:none in the
+        // flow and slides in over a backdrop); on md+ the hamburger keeps its
+        // original desktop collapse behaviour.
+        const isMobileViewport = () => window.matchMedia('(max-width: 767px)').matches;
+        function closeMobileSidebar() {
+            const sidebar = document.querySelector('aside');
+            if (sidebar) sidebar.classList.remove('mobile-open');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            if (backdrop) backdrop.classList.remove('show');
+        }
+        function toggleMobileSidebar() {
+            const sidebar = document.querySelector('aside');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            const open = sidebar && sidebar.classList.toggle('mobile-open');
+            if (backdrop) backdrop.classList.toggle('show', !!open);
+        }
         function toggleSidebar() {
+            if (isMobileViewport()) { toggleMobileSidebar(); return; }
             isSidebarCollapsed = !isSidebarCollapsed;
             const sidebar = document.querySelector('aside');
             const toggleIcon = document.getElementById('sidebarToggleIcon');
-            
+
             if (isSidebarCollapsed) {
                 sidebar.classList.add('sidebar-collapsed');
                 if (toggleIcon) toggleIcon.setAttribute('d', 'M9 5l7 7-7 7');
@@ -2912,6 +2929,8 @@
 
         // Central Router Engine
         function handleRouting() {
+            // Navigating from the mobile drawer should close it.
+            if (typeof closeMobileSidebar === 'function') closeMobileSidebar();
             const hash = window.location.hash || '#dashboard';
             const views = ['operations', 'dashboard', 'jobcards', 'jobcard-entry', 'programme', 'tracker', 'receiving', 'pricing', 'fleet', 'issued', 'issue-desk', 'inventory', 'batteries', 'battery-entry', 'battery-move', 'transfers', 'transfer-entry'];
             

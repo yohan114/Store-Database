@@ -66,7 +66,7 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ok(upd.success && upd.category === 'Electrical', 'PUT /api/items manual category override');
 
     // add receipt (receive)
-    let { body: rec } = await j(await fetch(BASE + `/api/items/${itemId}/receipts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qty: 3, transactionType: 'Receive', deliveryDate: '2026-06-04', purchaseSource: 'Local Store' }) }));
+    let { body: rec } = await j(await fetch(BASE + `/api/items/${itemId}/receipts`, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ qty: 3, transactionType: 'Receive', deliveryDate: '2026-06-04', purchaseSource: 'Local Purchase' }) }));
     ok(rec.success && rec.id, 'POST receipt (update receive)', `recId=${rec.id}`);
     const recId = rec.id;
 
@@ -98,6 +98,57 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     // confirm cleanup
     ({ body: page } = await j(await fetch(BASE + '/api/items?page=1&limit=1&search=TEST-001')));
     ok(page.total === 0, 'cleanup verified (item gone)');
+
+    // === REQUEST SOURCE + CANONICAL PURCHASE SOURCES + STOCK VALIDATION ===
+    console.log('\n--- Running Request-Source / Stock-Validation Tests ---');
+
+    // requestSource round-trip + filter
+    let { body: rsItem } = await j(await fetch(BASE + '/api/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mrnNum: 'TEST-RS-1', reqDate: '2026-06-03', vehicleMachinery: 'TEST-VH', itemName: 'Test Gasket', reqQty: 5, requestSource: 'Head Office' }) }));
+    ok(rsItem.success && rsItem.id, 'POST /api/items with requestSource', `id=${rsItem.id}`);
+    const rsId = rsItem.id;
+    ({ body: page } = await j(await fetch(BASE + '/api/items?page=1&limit=5&search=TEST-RS-1&requestSource=Head%20Office')));
+    ok(page.total === 1 && page.items[0].requestSource === 'Head Office', 'requestSource stored + filterable');
+    ({ body: page } = await j(await fetch(BASE + '/api/items?page=1&limit=5&search=TEST-RS-1&requestSource=Local')));
+    ok(page.total === 0, 'requestSource filter excludes the other bucket');
+
+    // legacy purchase-source spellings are canonicalised on write
+    let { body: rsRec } = await j(await fetch(BASE + `/api/items/${rsId}/receipts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qty: 3, transactionType: 'Receive', deliveryDate: '2026-06-04', purchaseSource: 'Local Store', unitPrice: 100 }) }));
+    ({ body: page } = await j(await fetch(BASE + '/api/items?page=1&limit=1&search=TEST-RS-1')));
+    ok(page.items[0].receipts[0].purchaseSource === 'Local Purchase', 'legacy "Local Store" canonicalised to "Local Purchase"');
+    let { body: rsRec2 } = await j(await fetch(BASE + `/api/receipts/${rsRec.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purchaseSource: 'Pre-Ordered' }) }));
+    ({ body: page } = await j(await fetch(BASE + '/api/items?page=1&limit=1&search=TEST-RS-1')));
+    ok(rsRec2.success && page.items[0].receipts[0].purchaseSource === 'Head Office Purchase', 'legacy "Pre-Ordered" canonicalised to "Head Office Purchase"');
+
+    // server-side over-issue validation on the linked path (3 received)
+    let { status: ovStatus, body: ovBody } = await j(await fetch(BASE + '/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ issueDate: '2026-06-05', vehicleMachinery: 'TEST-VH', itemName: 'Test Gasket', qty: 5, itemId: rsId }) }));
+    ok(ovStatus === 400 && /Insufficient stock/i.test((ovBody || {}).error || ''), 'over-issue rejected with 400', `err="${(ovBody || {}).error}"`);
+    let { body: okIss } = await j(await fetch(BASE + '/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ issueDate: '2026-06-05', vehicleMachinery: 'TEST-VH', itemName: 'Test Gasket', qty: 2, itemId: rsId }) }));
+    ok(okIss.success && okIss.id, 'issue within stock accepted');
+    ({ status: ovStatus, body: ovBody } = await j(await fetch(BASE + '/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ issueDate: '2026-06-05', vehicleMachinery: 'TEST-VH', itemName: 'Test Gasket', qty: 2, itemId: rsId }) })));
+    ok(ovStatus === 400, 'second issue beyond remaining balance rejected (only 1 left)');
+
+    // dashboard new blocks
+    let { body: dashNew } = await j(await fetch(BASE + '/api/dashboard'));
+    ok(Array.isArray(dashNew.monthly) && dashNew.monthly.length > 0 && typeof dashNew.monthly[0].total === 'number', 'dashboard monthly block present');
+    ok(dashNew.todays && dashNew.todays.today && typeof dashNew.todays.today.local === 'number', 'dashboard todays block present');
+    ok(dashNew.pending && dashNew.pending.counts && typeof dashNew.pending.counts.headOffice === 'number' && dashNew.pending.counts.headOffice >= 1, 'dashboard pending block counts the Head Office test item');
+
+    // /api/summary change signature
+    let { body: sum1 } = await j(await fetch(BASE + '/api/summary'));
+    ok(sum1 && typeof sum1.version === 'string' && sum1.version.length > 10, 'GET /api/summary returns a version signature');
+    await j(await fetch(BASE + `/api/receipts/${rsRec.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ unitPrice: 150 }) }));
+    let { body: sum2 } = await j(await fetch(BASE + '/api/summary'));
+    ok(sum2.version !== sum1.version, 'summary version changes after a pricing edit');
+
+    // static lockdown: the database and raw data files are no longer served
+    { const r = await _fetch(BASE + '/inventory.db'); ok(r.status === 404, 'inventory.db is not downloadable'); }
+    { const r = await _fetch(BASE + '/tracker_data.json'); ok(r.status === 404, 'tracker_data.json is not downloadable'); }
+
+    // cleanup this block
+    await j(await fetch(BASE + '/api/issues/' + okIss.id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    await j(await fetch(BASE + '/api/items/' + rsId + '?password=E%26CWorkshop', { method: 'DELETE' }));
+    ({ body: page } = await j(await fetch(BASE + '/api/items?page=1&limit=1&search=TEST-RS-1')));
+    ok(page.total === 0, 'request-source test cleanup verified');
 
     // === BATTERY REGISTRY TESTS ===
     console.log('\n--- Running Battery Registry API Tests ---');

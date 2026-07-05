@@ -69,13 +69,26 @@ This repo already ships the imported data in `inventory.db`.
   Items**, **Battery Registry**, **Material Transfers**, **Excel export**,
   automatic categories and 30-min backups — all as before. New MRNs can be
   linked to a job card from the **Log a New Request** form.
+- Every new request records **where it is purchased from** (Local / Head
+  Office); the Receiving Desk pre-selects the matching purchase source
+  (**Local Purchase** / **Head Office Purchase**) and flags mismatches.
+- Issues drawn from an MRN carry a hard `itemId` link and are stock-checked
+  server-side (an issue can never exceed the received balance of its line).
 
 ### Command Centre dashboard
 A filterable analytics band (filters: date range / month / year presets,
 source, category, vehicle, supplier):
 - **This Month** and **This Year** total spend tiles, plus a period total.
-- **Received Items — Local vs Head Office** split (derived from the purchase
-  source: *Local Store* → Local; *Direct Purchase / Pre-Ordered* → Head Office).
+- **Received Items — Local vs Head Office** split. Purchase sources are stored
+  as two canonical values — **Local Purchase** and **Head Office Purchase** —
+  and legacy spellings (*Local Store*, *Direct Purchase*, *Pre-Ordered*, *Head
+  Office*) are folded into them automatically at startup.
+- **Today's Local Purchase / Head Office Purchase totals** (with yesterday
+  comparison) and a **Monthly Expenses** chart + table (last 12 months, split
+  by source).
+- **Pending Items** lists — requests not yet fully delivered, tabbed by where
+  they were requested from (Head Office / Local), with outstanding qty and
+  days waiting.
 - **Supplier Spend Distribution** (doughnut + ranked list).
 - **Daily received value** split Local vs Head Office.
 - **Active jobs** and **total job cost** (parts + labour) KPIs.
@@ -94,9 +107,9 @@ your password from the account menu (top-right).
 | `jobcards`, `job_audits` | job cards + activity trail |
 | `daily_programme` | per-day work log (child of a job card) |
 | `mechanics` | hourly rates for labour costing |
-| `items` (`+ jobCardId/jobNo`) | MRN request lines, optionally linked to a job |
-| `receipts` | received / returned transactions + GRN / invoice / pricing |
-| `issues` (`+ jobCardId/jobNo`) | items issued out to a vehicle/machinery |
+| `items` (`+ jobCardId/jobNo, requestSource`) | MRN request lines (Local / Head Office), optionally linked to a job |
+| `receipts` | received / returned transactions + GRN / invoice / pricing (canonical `purchaseSource`) |
+| `issues` (`+ jobCardId/jobNo, itemId`) | items issued out to a vehicle/machinery, hard-linked to their MRN line |
 | `batteries`, `battery_movements`, `material_transfers` | store subsystems |
 
 The SQLite engine auto-selects `better-sqlite3`, falling back to Node's built-in

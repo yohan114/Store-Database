@@ -348,6 +348,31 @@ function init() {
     });
     try { exec(`CREATE INDEX IF NOT EXISTS idx_items_jobCardId ON items(jobCardId);`); } catch (e) {}
     try { exec(`CREATE INDEX IF NOT EXISTS idx_issues_jobCardId ON issues(jobCardId);`); } catch (e) {}
+
+    // Migration: where a request should be purchased from ('Local' | 'Head Office').
+    try {
+        const cols = all(`PRAGMA table_info(items)`);
+        if (!cols.some(c => c.name === 'requestSource')) exec(`ALTER TABLE items ADD COLUMN requestSource TEXT;`);
+    } catch (e) { /* fresh DB already has it */ }
+    try { exec(`CREATE INDEX IF NOT EXISTS idx_items_requestSource ON items(requestSource);`); } catch (e) {}
+
+    // Migration: hard link from an issue to the request line it draws stock from.
+    try {
+        const cols = all(`PRAGMA table_info(issues)`);
+        if (!cols.some(c => c.name === 'itemId')) exec(`ALTER TABLE issues ADD COLUMN itemId INTEGER;`);
+    } catch (e) { /* fresh DB already has it */ }
+    try { exec(`CREATE INDEX IF NOT EXISTS idx_issues_itemId ON issues(itemId);`); } catch (e) {}
+
+    // Normalise purchase sources to the two canonical values. Idempotent and
+    // cheap, so it runs on every boot — old spellings can never accumulate.
+    try {
+        run(`UPDATE receipts SET purchaseSource='Local Purchase'
+              WHERE LOWER(TRIM(purchaseSource)) IN ('local store','local purchase')
+                AND purchaseSource <> 'Local Purchase'`);
+        run(`UPDATE receipts SET purchaseSource='Head Office Purchase'
+              WHERE LOWER(TRIM(purchaseSource)) IN ('direct purchase','head office','pre-ordered','head office purchase')
+                AND purchaseSource <> 'Head Office Purchase'`);
+    } catch (e) { /* table may not exist yet on a brand-new DB */ }
     return db;
 }
 

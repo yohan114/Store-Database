@@ -15,7 +15,10 @@ const cleanupTestDb = () => { for (const s of ['', '-wal', '-shm']) { try { fs.u
 process.on('exit', cleanupTestDb);
 
 process.env.PORT = process.env.PORT || '4173';
-require('./server.js');
+// server.js no longer listens when required as a module (it is embeddable in
+// the unified E&C server), so the test owns the socket itself.
+const app = require('./server.js');
+app.listen(process.env.PORT, '127.0.0.1');
 
 const BASE = `http://localhost:${process.env.PORT}`;
 const delay = (ms) => new Promise(r => setTimeout(r, ms));

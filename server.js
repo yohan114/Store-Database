@@ -37,6 +37,33 @@ const PORT = process.env.PORT || 5000;
 
 app.use(express.json({ limit: '100mb' }));
 
+// ---- Response gzip (zero-dependency) --------------------------------------
+// The whole-dataset /api/items JSON is ~2.9 MB uncompressed; gzip drops it
+// ~10× on the wire (review finding 10/perf). Compression is async so it never
+// blocks the event loop, and only kicks in for bodies over ~1 KB when the
+// client advertises gzip. Static files keep their own (browser-cached) path.
+const zlib = require('zlib');
+app.use((req, res, next) => {
+    if (!/\bgzip\b/.test(req.headers['accept-encoding'] || '')) return next();
+    const rawSend = res.send.bind(res);
+    res.send = (body) => {
+        try {
+            if (!res.getHeader('Content-Encoding') && (Buffer.isBuffer(body) || typeof body === 'string') && Buffer.byteLength(body) > 1024) {
+                res.setHeader('Vary', 'Accept-Encoding');
+                zlib.gzip(body, (err, gz) => {
+                    if (err) return rawSend(body);
+                    res.setHeader('Content-Encoding', 'gzip');
+                    res.removeHeader('Content-Length');
+                    rawSend(gz);
+                });
+                return res;
+            }
+        } catch (_) { /* fall through to uncompressed */ }
+        return rawSend(body);
+    };
+    next();
+});
+
 // Resolve the logged-in user (if any) for every request from its session cookie.
 app.use(auth.attachUser);
 
@@ -212,15 +239,22 @@ app.get('/api/outbox', auth.requireRole('ADMIN'), (req, res) => res.json({ outbo
 // item's updatedAt so pricing edits are visible in the signature too.
 app.get('/api/summary', (req, res) => {
     try {
+        // One scan per table (count + max id + max updatedAt together) instead of
+        // two — halves the poll cost (review finding 13). count catches deletes,
+        // maxId catches inserts, maxUpdatedAt catches in-place edits.
+        const withUpdated = new Set(['items', 'issues', 'batteries', 'material_transfers', 'jobcards', 'daily_programme']);
         const parts = [];
         for (const t of ['items', 'receipts', 'issues', 'batteries', 'material_transfers', 'jobcards', 'daily_programme']) {
-            const r = dbApi.get(`SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m FROM ${t}`);
-            parts.push(`${r.n}:${r.m}`);
+            const cols = withUpdated.has(t)
+                ? `COUNT(*) AS n, COALESCE(MAX(id),0) AS m, COALESCE(MAX(updatedAt),'') AS u`
+                : `COUNT(*) AS n, COALESCE(MAX(id),0) AS m, '' AS u`;
+            const r = dbApi.get(`SELECT ${cols} FROM ${t}`);
+            parts.push(`${r.n}:${r.m}:${r.u}`);
         }
-        for (const t of ['items', 'issues', 'batteries', 'material_transfers', 'jobcards', 'daily_programme']) {
-            parts.push((dbApi.get(`SELECT COALESCE(MAX(updatedAt),'') AS u FROM ${t}`) || {}).u || '');
-        }
-        res.json({ version: parts.join('|') });
+        // Fold in the caller's unread-notification count so the client can drive
+        // the bell from this one poll instead of a second /api/notifications hit.
+        const unread = req.user ? notifications.unreadCount(req.user.id) : 0;
+        res.json({ version: parts.join('|'), unread });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -477,18 +511,28 @@ app.get('/api/items', (req, res) => {
         const page = parseInt(req.query.page) || null;
         const limit = parseInt(req.query.limit) || null;
 
-        // The computed columns used by both filter tabs and sorting.
+        // The computed columns used by both filter tabs and sorting. One
+        // GROUP-BY aggregate over receipts replaces four correlated subqueries
+        // per row (review finding 10) — a single pass instead of 4×N lookups.
         const computed = `
             i.*,
-            COALESCE((SELECT SUM(qty) FROM receipts r WHERE r.itemId=i.id),0) AS recQty,
-            (SELECT COUNT(*) FROM receipts r WHERE r.itemId=i.id) AS recCount,
-            (SELECT MAX(deliveryDateISO) FROM receipts r WHERE r.itemId=i.id) AS recDateISO,
-            CASE WHEN EXISTS(SELECT 1 FROM receipts r WHERE r.itemId=i.id AND (r.unitPrice IS NULL OR r.unitPrice=0)) THEN 1 ELSE 0 END AS hasUnpriced
+            COALESCE(rc.recQty,0) AS recQty,
+            COALESCE(rc.recCount,0) AS recCount,
+            rc.recDateISO AS recDateISO,
+            COALESCE(rc.hasUnpriced,0) AS hasUnpriced
         `;
+        const RECEIPT_AGG = `LEFT JOIN (
+            SELECT itemId,
+                   COALESCE(SUM(qty),0) AS recQty,
+                   COUNT(*) AS recCount,
+                   MAX(deliveryDateISO) AS recDateISO,
+                   MAX(CASE WHEN unitPrice IS NULL OR unitPrice=0 THEN 1 ELSE 0 END) AS hasUnpriced
+            FROM receipts GROUP BY itemId
+        ) rc ON rc.itemId = i.id`;
 
         // Unpaginated: return the whole dataset (used by dashboard/fleet/dropdowns).
         if (!page || !limit) {
-            const items = dbApi.all(`SELECT ${computed} FROM items i ORDER BY i.reqDateISO DESC, i.id DESC`);
+            const items = dbApi.all(`SELECT ${computed} FROM items i ${RECEIPT_AGG} ORDER BY i.reqDateISO DESC, i.id DESC`);
             return res.json(attachReceipts(items));
         }
 
@@ -500,7 +544,7 @@ app.get('/api/items', (req, res) => {
         const order = (req.query.order || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
         const skip = (page - 1) * limit;
 
-        const baseCte = `WITH base AS (SELECT ${computed} FROM items i ${clause})`;
+        const baseCte = `WITH base AS (SELECT ${computed} FROM items i ${RECEIPT_AGG} ${clause})`;
         const total = dbApi.get(`${baseCte} SELECT COUNT(*) AS c FROM base ${outerWhere}`, params).c;
         const items = dbApi.all(
             `${baseCte} SELECT * FROM base ${outerWhere} ORDER BY ${sortKey} ${order}, id DESC LIMIT ? OFFSET ?`,

@@ -65,7 +65,10 @@ async function refreshNotifications() {
 function startNotifications() {
     refreshNotifications();
     if (notifTimer) clearInterval(notifTimer);
-    notifTimer = setInterval(refreshNotifications, 20000);
+    // The badge is refreshed every 15 s by the main /api/summary poll (unread is
+    // folded in there), so the full list only needs an occasional safety refresh
+    // — plus an on-demand fetch whenever the dropdown is opened.
+    notifTimer = setInterval(refreshNotifications, 60000);
 }
 function toggleNotifDropdown() {
     const d = document.getElementById('notifDropdown');

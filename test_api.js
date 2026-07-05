@@ -427,6 +427,15 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ok(typeof dk.jobs.issuesCost === 'number' && typeof dk.jobs.recordedCost === 'number' && dk.jobs.totalCost >= dk.jobs.recordedCost,
         'dashboard jobKpis includes issuesCost + recordedCost in the total');
 
+    // P1.13 — /api/summary is a cheap change signature + folds in unread count
+    let { body: summ } = await j(await fetch(BASE + '/api/summary'));
+    ok(typeof summ.version === 'string' && summ.version.split('|').length === 7 && typeof summ.unread === 'number',
+        'GET /api/summary returns 7-part change signature + unread count');
+    // P1.10 — GET /api/items (GROUP-BY aggregate) still reports received qty
+    let { body: itList } = await j(await fetch(BASE + '/api/items?page=1&limit=5'));
+    ok(Array.isArray(itList.items) && itList.items.every((it) => typeof it.recQty === 'number'),
+        'GET /api/items aggregate returns numeric recQty per row');
+
     // P1 (downgraded) — editing an issue preserves its manual price (no silent re-derive)
     await j(await fetch(BASE + '/api/issues/' + jcIssue.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ issueDate: '2026-06-10', vehicleMachinery: 'TEST-VH', itemName: 'JC Consumable', qty: 6, jobCardId: jcId }) }));
     let { body: issAfter } = await j(await fetch(BASE + '/api/jobcards/' + jcId));

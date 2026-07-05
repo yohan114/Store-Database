@@ -31,6 +31,13 @@ let batterySearchQuery = '';
 let batteryStatusFilter = 'all';
 // Material Transfers state
 let transfers = [];
+// Fast deep clone for the per-render display copies. Native
+// structuredClone avoids the multi-MB string round-trip that
+// JSON.parse(JSON.stringify(...)) did on every fleet/inventory render
+// (review finding 12), with identical semantics; JSON is the fallback.
+const cloneDeep = (typeof globalThis.structuredClone === 'function')
+    ? (x) => globalThis.structuredClone(x)
+    : (x) => JSON.parse(JSON.stringify(x));
 // Category + Issues state
 const FALLBACK_CATEGORIES = ['Battery', 'Filters', 'Tyre', 'Oil & Lubricants', 'Electrical', 'Bearings & Seals', 'Belts', 'Hydraulics', 'General Items'];
 // Purchase-source taxonomy — the client mirror of costing.js
@@ -59,22 +66,65 @@ function originOfSource(v) {
 // Total qty already issued against a request item. One shared rule for
 // Issue Desk, Fleet and Store Stock: the hard itemId link wins, then
 // MRN + name, then vehicle + name, then name alone (legacy rows).
+//
+// Every non-itemId branch requires the issue's name to equal the item's,
+// so we bucket issues by name once per data load and scan only the
+// matching bucket instead of the whole `issues` array for every item —
+// turning the O(items × issues) render loop into O(items × sameName)
+// (review finding 12). `_issuedIndex` is rebuilt lazily after each load.
+let _issuedIndex = null;
+function invalidateIssuedIndex() { _issuedIndex = null; }
+function buildIssuedIndex() {
+    const byItemId = new Map();
+    const byName = new Map();
+    const byId = new Map();
+    for (const is of issues) {
+        byId.set(String(is.id), is);
+        if (is.itemId) {
+            const k = String(is.itemId);
+            byItemId.set(k, (byItemId.get(k) || 0) + (Number(is.qty) || 0));
+        }
+        else {
+            const k = String(is.itemName || '').trim().toLowerCase();
+            let arr = byName.get(k);
+            if (!arr) {
+                arr = [];
+                byName.set(k, arr);
+            }
+            arr.push(is);
+        }
+    }
+    _issuedIndex = { byItemId, byName, byId };
+}
 function issuedQtyForItem(item, excludeIssueId = null) {
+    if (!_issuedIndex)
+        buildIssuedIndex();
+    const idx = _issuedIndex;
     const norm = (v) => String(v || '').trim().toLowerCase();
     const itemName = norm(item.name || item.itemName);
-    return issues.filter(is => {
+    // Hard itemId links (exact) — subtract the excluded issue if it is one.
+    let sum = idx.byItemId.get(String(item.id)) || 0;
+    if (excludeIssueId) {
+        const ex = idx.byId.get(String(excludeIssueId));
+        if (ex && ex.itemId && String(ex.itemId) === String(item.id))
+            sum -= Number(ex.qty) || 0;
+    }
+    // Non-linked issues that share this item's name (a small bucket).
+    const bucket = idx.byName.get(itemName) || [];
+    for (const is of bucket) {
         if (excludeIssueId && String(is.id) === String(excludeIssueId))
-            return false;
-        if (is.itemId)
-            return String(is.itemId) === String(item.id);
-        if (item.mrnNum && is.mrnNum) {
-            return norm(is.mrnNum) === norm(item.mrnNum) && norm(is.itemName) === itemName;
-        }
-        if (item.vehicleMachinery && is.vehicleMachinery) {
-            return norm(is.vehicleMachinery) === norm(item.vehicleMachinery) && norm(is.itemName) === itemName;
-        }
-        return norm(is.itemName) === itemName;
-    }).reduce((sum, is) => sum + is.qty, 0);
+            continue;
+        let match;
+        if (item.mrnNum && is.mrnNum)
+            match = norm(is.mrnNum) === norm(item.mrnNum);
+        else if (item.vehicleMachinery && is.vehicleMachinery)
+            match = norm(is.vehicleMachinery) === norm(item.vehicleMachinery);
+        else
+            match = true; // name already equal (bucket key)
+        if (match)
+            sum += Number(is.qty) || 0;
+    }
+    return sum;
 }
 let allCategories = FALLBACK_CATEGORIES.slice();
 let categoryCounts = {};
@@ -609,6 +659,7 @@ async function loadAllData() {
             const resIssues = await fetch('/api/issues');
             if (resIssues.ok) {
                 issues = await resIssues.json();
+                invalidateIssuedIndex();
             }
         }
         catch (err) {
@@ -819,9 +870,11 @@ async function loadIssues() {
             p.set('endDate', issueFilters.endDate);
         const res = await fetch('/api/issues?' + p.toString());
         issues = res.ok ? await res.json() : [];
+        invalidateIssuedIndex();
     }
     catch (e) {
         issues = [];
+        invalidateIssuedIndex();
     }
     renderIssuesTable();
 }
@@ -895,7 +948,7 @@ function setupIssueDesk(type = null, id = null) {
     issueIdInput.value = '';
     // Set default date to today
     document.getElementById('issueDeskDate').value = new Date().toISOString().split('T')[0];
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     // Filter out items that have already been fully issued OR have not been received yet
     const activeItems = displayAll.filter(item => {
@@ -1017,7 +1070,7 @@ function handleIssueItemSelection(itemId) {
         metaContainer.innerHTML = 'No request selected (manual entry mode)';
         return;
     }
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     const item = displayAll.find(i => String(i.id) === String(itemId));
     if (!item) {
@@ -1100,7 +1153,7 @@ function updateSidebarBadges() {
     let countAll = allItems.length;
     let countPendingDelivery = 0;
     let countPendingPricing = 0;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     displayAll.forEach(item => {
         const isPendingDelivery = item.reqQty > item.recQty;
@@ -1145,7 +1198,7 @@ let inventorySortDirection = 'asc';
 function calculateInventoryList() {
     const inventoryMap = {};
     // 1. Process all request items & receipts
-    const displayItems = JSON.parse(JSON.stringify(allItems));
+    const displayItems = cloneDeep(allItems);
     applyQueueMutations(displayItems);
     displayItems.forEach(item => {
         if (!item.itemName)
@@ -1177,7 +1230,7 @@ function calculateInventoryList() {
         });
     });
     // 2. Process all issues
-    const displayIssues = JSON.parse(JSON.stringify(issues));
+    const displayIssues = cloneDeep(issues);
     displayIssues.forEach(is => {
         if (!is.itemName)
             return;
@@ -1517,7 +1570,7 @@ function openInventoryOffcanvas(cleanName) {
     }
     const receiveBtn = document.getElementById('inventoryOffcanvasReceiveBtn');
     const issueBtn = document.getElementById('inventoryOffcanvasIssueBtn');
-    const displayItems = JSON.parse(JSON.stringify(allItems));
+    const displayItems = cloneDeep(allItems);
     applyQueueMutations(displayItems);
     const linkedItem = displayItems.find(item => item.itemName && item.itemName.trim().toLowerCase() === cleanName);
     if (linkedItem) {
@@ -1560,7 +1613,7 @@ function closeInventoryOffcanvas() {
 function renderTable() {
     tableBody.innerHTML = '';
     updateHeaderSortIndicators();
-    const displayItems = JSON.parse(JSON.stringify(items));
+    const displayItems = cloneDeep(items);
     applyQueueMutations(displayItems);
     // Re-sort the current page items locally if necessary
     displayItems.sort((a, b) => {
@@ -1808,7 +1861,7 @@ function clearMrnFilter() {
 // Render Open MRNs in Sidebar
 function renderOpenMrns() {
     const openMrns = {};
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     displayAll.forEach(item => {
         if (item.reqQty > item.recQty) {
@@ -1858,7 +1911,7 @@ function renderPricingSummary() {
     const supplierSpend = {};
     let pricedCount = 0;
     let unpricedReceivedCount = 0;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     displayAll.forEach(item => {
         const receipts = item.receipts || [];
@@ -1964,7 +2017,7 @@ function updateCharts() {
     if (!spendTrendChart || !supplierShareChart)
         return;
     const isDark = document.documentElement.classList.contains('dark');
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     // Spend trend calculations
     const spendByDate = {};
@@ -2077,7 +2130,7 @@ function renderDashboard() {
     const urgentBody = document.getElementById('urgentDashboardBody');
     if (!urgentBody)
         return;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -2128,7 +2181,7 @@ function renderFleetView() {
     if (!container)
         return;
     const searchVal = document.getElementById('fleetSearchInput')?.value.toLowerCase().trim() || '';
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     // Group all items (requisitions) by vehicle
     const vehicles = {};
@@ -2306,7 +2359,7 @@ function setVehicleTab(tab) {
 function renderVehicleOffcanvasData() {
     if (!activeVehicleName)
         return;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     // Filter items & issues for active vehicle
     const vehicleItems = displayAll.filter(item => item.vehicleMachinery && item.vehicleMachinery.trim() === activeVehicleName);
@@ -2515,7 +2568,7 @@ function setupReceivingDesk(prefilledId = null) {
     const filenameLabel = document.getElementById('receivingPdfFilename');
     if (!select || !searchInput || !datalist)
         return;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     // Fetch active pending MRN items
     const activeItems = displayAll.filter(item => item.reqQty > item.recQty);
@@ -2591,7 +2644,7 @@ function handleReceivingItemSelection(itemId) {
         updateRecDeskMismatchNote();
         return;
     }
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     const item = displayAll.find(i => String(i.id) === String(itemId));
     if (!item) {
@@ -2631,7 +2684,7 @@ function renderPricingDesk() {
     const listContainer = document.getElementById('unpricedDeliveriesList');
     if (!listContainer)
         return;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     // Get search query
     const searchInput = document.getElementById('pricingSearchInput');
@@ -2688,7 +2741,7 @@ function openPricingAuditWorkspace(itemId, receiptId) {
     const emptyContainer = document.getElementById('pricingAuditEmptyState');
     if (!formContainer || !emptyContainer)
         return;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     const item = displayAll.find(i => String(i.id) === String(itemId));
     if (!item)
@@ -2723,7 +2776,7 @@ function closePricingAuditWorkspace() {
     formContainer.classList.add('hidden');
     emptyContainer.classList.remove('hidden');
     // Re-render list to clean active borders
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     const listContainer = document.getElementById('unpricedDeliveriesList');
     if (listContainer) {
@@ -2741,7 +2794,7 @@ function closePricingAuditWorkspace() {
 function updateAuditFormTotalPrice() {
     const itemId = document.getElementById('auditItemId').value;
     const receiptId = document.getElementById('auditReceiptId').value;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     const item = displayAll.find(i => String(i.id) === String(itemId));
     if (!item)
@@ -2882,7 +2935,7 @@ function openPricingOffcanvas(itemId) {
     const offcanvas = document.getElementById('pricingOffcanvas');
     if (!offcanvas)
         return;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     const item = displayAll.find(i => String(i.id) === String(itemId));
     if (!item)
@@ -2938,7 +2991,7 @@ function populateOffcanvasDeliverySelect(item) {
 function loadOffcanvasSelectedDeliveryPricing() {
     const select = document.getElementById('offcanvasDeliverySelect');
     const itemId = document.getElementById('pricingOffcanvasMrn').dataset.itemId;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     const item = displayAll.find(i => String(i.id) === String(itemId));
     if (!item)
@@ -2964,7 +3017,7 @@ function loadOffcanvasSelectedDeliveryPricing() {
 function updateOffcanvasPricingFormTotalPrice() {
     const select = document.getElementById('offcanvasDeliverySelect');
     const itemId = document.getElementById('pricingOffcanvasMrn').dataset.itemId;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     const item = displayAll.find(i => String(i.id) === String(itemId));
     if (!item)
@@ -3036,7 +3089,7 @@ function openEditRequestModal(itemId) {
     const modal = document.getElementById('editRequestModal');
     if (!modal)
         return;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     const item = displayAll.find(i => String(i.id) === String(itemId));
     if (!item)
@@ -3396,7 +3449,7 @@ function renderDailyReceivedLedger() {
     const showMoreContainer = document.getElementById('ledgerShowMoreContainer');
     if (!container)
         return;
-    const displayAll = JSON.parse(JSON.stringify(allItems));
+    const displayAll = cloneDeep(allItems);
     applyQueueMutations(displayAll);
     // Group receipts by date
     const dailyData = {};
@@ -3984,6 +4037,16 @@ setInterval(async () => {
             // the server-side change signature actually moved.
             try {
                 const sum = await (await fetch('/api/summary')).json();
+                // The bell badge rides on this one poll (unread is folded
+                // into /api/summary) so the notifications list can poll
+                // far less often (review finding 13: merge the two polls).
+                if (sum && typeof sum.unread !== 'undefined') {
+                    const badge = document.getElementById('notifBadge');
+                    if (badge) {
+                        badge.textContent = sum.unread;
+                        badge.classList.toggle('hidden', !sum.unread);
+                    }
+                }
                 if (sum && sum.version !== lastDataVersion) {
                     lastDataVersion = sum.version;
                     await loadAllData();

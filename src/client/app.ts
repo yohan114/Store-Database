@@ -36,6 +36,14 @@
         // Material Transfers state
         let transfers: TransferRec[] = [];
 
+        // Fast deep clone for the per-render display copies. Native
+        // structuredClone avoids the multi-MB string round-trip that
+        // JSON.parse(JSON.stringify(...)) did on every fleet/inventory render
+        // (review finding 12), with identical semantics; JSON is the fallback.
+        const cloneDeep = (typeof (globalThis as any).structuredClone === 'function')
+            ? (x) => (globalThis as any).structuredClone(x)
+            : (x) => JSON.parse(JSON.stringify(x));
+
         // Category + Issues state
         const FALLBACK_CATEGORIES = ['Battery','Filters','Tyre','Oil & Lubricants','Electrical','Bearings & Seals','Belts','Hydraulics','General Items'];
 
@@ -62,20 +70,53 @@
         // Total qty already issued against a request item. One shared rule for
         // Issue Desk, Fleet and Store Stock: the hard itemId link wins, then
         // MRN + name, then vehicle + name, then name alone (legacy rows).
+        //
+        // Every non-itemId branch requires the issue's name to equal the item's,
+        // so we bucket issues by name once per data load and scan only the
+        // matching bucket instead of the whole `issues` array for every item —
+        // turning the O(items × issues) render loop into O(items × sameName)
+        // (review finding 12). `_issuedIndex` is rebuilt lazily after each load.
+        let _issuedIndex: { byItemId: Map<string, number>, byName: Map<string, IssueRec[]>, byId: Map<string, IssueRec> } | null = null;
+        function invalidateIssuedIndex() { _issuedIndex = null; }
+        function buildIssuedIndex() {
+            const byItemId = new Map<string, number>();
+            const byName = new Map<string, IssueRec[]>();
+            const byId = new Map<string, IssueRec>();
+            for (const is of issues) {
+                byId.set(String(is.id), is);
+                if (is.itemId) {
+                    const k = String(is.itemId);
+                    byItemId.set(k, (byItemId.get(k) || 0) + (Number(is.qty) || 0));
+                } else {
+                    const k = String(is.itemName || '').trim().toLowerCase();
+                    let arr = byName.get(k); if (!arr) { arr = []; byName.set(k, arr); }
+                    arr.push(is);
+                }
+            }
+            _issuedIndex = { byItemId, byName, byId };
+        }
         function issuedQtyForItem(item, excludeIssueId = null) {
+            if (!_issuedIndex) buildIssuedIndex();
+            const idx = _issuedIndex!;
             const norm = (v) => String(v || '').trim().toLowerCase();
             const itemName = norm(item.name || item.itemName);
-            return issues.filter(is => {
-                if (excludeIssueId && String(is.id) === String(excludeIssueId)) return false;
-                if (is.itemId) return String(is.itemId) === String(item.id);
-                if (item.mrnNum && is.mrnNum) {
-                    return norm(is.mrnNum) === norm(item.mrnNum) && norm(is.itemName) === itemName;
-                }
-                if (item.vehicleMachinery && is.vehicleMachinery) {
-                    return norm(is.vehicleMachinery) === norm(item.vehicleMachinery) && norm(is.itemName) === itemName;
-                }
-                return norm(is.itemName) === itemName;
-            }).reduce((sum, is) => sum + is.qty, 0);
+            // Hard itemId links (exact) — subtract the excluded issue if it is one.
+            let sum = idx.byItemId.get(String(item.id)) || 0;
+            if (excludeIssueId) {
+                const ex = idx.byId.get(String(excludeIssueId));
+                if (ex && ex.itemId && String(ex.itemId) === String(item.id)) sum -= Number(ex.qty) || 0;
+            }
+            // Non-linked issues that share this item's name (a small bucket).
+            const bucket = idx.byName.get(itemName) || [];
+            for (const is of bucket) {
+                if (excludeIssueId && String(is.id) === String(excludeIssueId)) continue;
+                let match;
+                if (item.mrnNum && is.mrnNum) match = norm(is.mrnNum) === norm(item.mrnNum);
+                else if (item.vehicleMachinery && is.vehicleMachinery) match = norm(is.vehicleMachinery) === norm(item.vehicleMachinery);
+                else match = true;   // name already equal (bucket key)
+                if (match) sum += Number(is.qty) || 0;
+            }
+            return sum;
         }
         let allCategories = FALLBACK_CATEGORIES.slice();
         let categoryCounts: Record<string, number> = {};
@@ -623,6 +664,7 @@
                     const resIssues = await fetch('/api/issues');
                     if (resIssues.ok) {
                         issues = await resIssues.json();
+                        invalidateIssuedIndex();
                     }
                 } catch (err) {
                     console.error("Failed to load issues list:", err);
@@ -826,7 +868,8 @@
                 if (issueFilters.endDate) p.set('endDate', issueFilters.endDate);
                 const res = await fetch('/api/issues?' + p.toString());
                 issues = res.ok ? await res.json() : [];
-            } catch (e) { issues = []; }
+                invalidateIssuedIndex();
+            } catch (e) { issues = []; invalidateIssuedIndex(); }
             renderIssuesTable();
         }
 
@@ -895,7 +938,7 @@
             // Set default date to today
             document.getElementById('issueDeskDate').value = new Date().toISOString().split('T')[0];
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             // Filter out items that have already been fully issued OR have not been received yet
@@ -1027,7 +1070,7 @@
                 return;
             }
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             const item = displayAll.find(i => String(i.id) === String(itemId));
@@ -1107,7 +1150,7 @@
             let countPendingDelivery = 0;
             let countPendingPricing = 0;
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             displayAll.forEach(item => {
@@ -1154,7 +1197,7 @@
             const inventoryMap: Record<string, any> = {};
 
             // 1. Process all request items & receipts
-            const displayItems = JSON.parse(JSON.stringify(allItems));
+            const displayItems = cloneDeep(allItems);
             applyQueueMutations(displayItems);
 
             displayItems.forEach(item => {
@@ -1188,7 +1231,7 @@
             });
 
             // 2. Process all issues
-            const displayIssues = JSON.parse(JSON.stringify(issues));
+            const displayIssues = cloneDeep(issues);
             displayIssues.forEach(is => {
                 if (!is.itemName) return;
                 const cleanName = is.itemName.trim().toLowerCase();
@@ -1543,7 +1586,7 @@
             const receiveBtn = document.getElementById('inventoryOffcanvasReceiveBtn');
             const issueBtn = document.getElementById('inventoryOffcanvasIssueBtn');
 
-            const displayItems = JSON.parse(JSON.stringify(allItems));
+            const displayItems = cloneDeep(allItems);
             applyQueueMutations(displayItems);
             const linkedItem = displayItems.find(item => item.itemName && item.itemName.trim().toLowerCase() === cleanName);
             
@@ -1589,7 +1632,7 @@
             tableBody.innerHTML = '';
             updateHeaderSortIndicators();
 
-            const displayItems = JSON.parse(JSON.stringify(items));
+            const displayItems = cloneDeep(items);
             applyQueueMutations(displayItems);
 
             // Re-sort the current page items locally if necessary
@@ -1846,7 +1889,7 @@
         // Render Open MRNs in Sidebar
         function renderOpenMrns() {
             const openMrns: Record<string, any> = {};
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             displayAll.forEach(item => {
@@ -1900,7 +1943,7 @@
             let pricedCount = 0;
             let unpricedReceivedCount = 0;
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             displayAll.forEach(item => {
@@ -2011,7 +2054,7 @@
             if (!spendTrendChart || !supplierShareChart) return;
             const isDark = document.documentElement.classList.contains('dark');
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             // Spend trend calculations
@@ -2138,7 +2181,7 @@
             const urgentBody = document.getElementById('urgentDashboardBody');
             if (!urgentBody) return;
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             const today = new Date();
@@ -2194,7 +2237,7 @@
 
             const searchVal = document.getElementById('fleetSearchInput')?.value.toLowerCase().trim() || '';
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             // Group all items (requisitions) by vehicle
@@ -2390,7 +2433,7 @@
         function renderVehicleOffcanvasData() {
             if (!activeVehicleName) return;
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             // Filter items & issues for active vehicle
@@ -2603,7 +2646,7 @@
             const filenameLabel = document.getElementById('receivingPdfFilename');
             if (!select || !searchInput || !datalist) return;
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             // Fetch active pending MRN items
@@ -2684,7 +2727,7 @@
                 return;
             }
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             const item = displayAll.find(i => String(i.id) === String(itemId));
@@ -2728,7 +2771,7 @@
             const listContainer = document.getElementById('unpricedDeliveriesList');
             if (!listContainer) return;
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             // Get search query
@@ -2792,7 +2835,7 @@
             const emptyContainer = document.getElementById('pricingAuditEmptyState');
             if (!formContainer || !emptyContainer) return;
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             const item = displayAll.find(i => String(i.id) === String(itemId));
@@ -2833,7 +2876,7 @@
             emptyContainer.classList.remove('hidden');
             
             // Re-render list to clean active borders
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
             const listContainer = document.getElementById('unpricedDeliveriesList');
             if (listContainer) {
@@ -2853,7 +2896,7 @@
             const itemId = document.getElementById('auditItemId').value;
             const receiptId = document.getElementById('auditReceiptId').value;
             
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             const item = displayAll.find(i => String(i.id) === String(itemId));
@@ -2998,7 +3041,7 @@
             const offcanvas = document.getElementById('pricingOffcanvas');
             if (!offcanvas) return;
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             const item = displayAll.find(i => String(i.id) === String(itemId));
@@ -3063,7 +3106,7 @@
         function loadOffcanvasSelectedDeliveryPricing() {
             const select = document.getElementById('offcanvasDeliverySelect');
             const itemId = document.getElementById('pricingOffcanvasMrn').dataset.itemId;
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             const item = displayAll.find(i => String(i.id) === String(itemId));
@@ -3093,7 +3136,7 @@
         function updateOffcanvasPricingFormTotalPrice() {
             const select = document.getElementById('offcanvasDeliverySelect');
             const itemId = document.getElementById('pricingOffcanvasMrn').dataset.itemId;
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             const item = displayAll.find(i => String(i.id) === String(itemId));
@@ -3171,7 +3214,7 @@
             const modal = document.getElementById('editRequestModal');
             if (!modal) return;
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             const item = displayAll.find(i => String(i.id) === String(itemId));
@@ -3620,7 +3663,7 @@
             const showMoreContainer = document.getElementById('ledgerShowMoreContainer');
             if (!container) return;
 
-            const displayAll = JSON.parse(JSON.stringify(allItems));
+            const displayAll = cloneDeep(allItems);
             applyQueueMutations(displayAll);
 
             // Group receipts by date
@@ -4228,6 +4271,13 @@
                     // the server-side change signature actually moved.
                     try {
                         const sum = await (await fetch('/api/summary')).json();
+                        // The bell badge rides on this one poll (unread is folded
+                        // into /api/summary) so the notifications list can poll
+                        // far less often (review finding 13: merge the two polls).
+                        if (sum && typeof sum.unread !== 'undefined') {
+                            const badge = document.getElementById('notifBadge');
+                            if (badge) { badge.textContent = sum.unread; badge.classList.toggle('hidden', !sum.unread); }
+                        }
                         if (sum && sum.version !== lastDataVersion) {
                             lastDataVersion = sum.version;
                             await loadAllData();

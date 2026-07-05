@@ -410,6 +410,29 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ({ body: jcGet } = await j(await fetch(BASE + '/api/jobcards/' + jcId)));
     ok(jcGet.issuesCost === 100 && jcGet.partsCost === 600 && jcGet.totalCost === 7000,
         'priced issue rolls into job cost (issued 4×25=100; parts 600; total 6400+600=7000)', 'total=' + jcGet.totalCost);
+
+    // P1.6 — the grid total (list) must equal the detail total (get), not labour only
+    let { body: jcList } = await j(await fetch(BASE + '/api/jobcards?search=TEST-VH&limit=50'));
+    const listRow = (jcList.jobcards || []).find((r) => r.id === jcId);
+    ok(listRow && listRow.totalCost === jcGet.totalCost && listRow.totalCost === 7000,
+        'list total equals detail total (parts+issues+labour, not labour only)', 'listTotal=' + (listRow && listRow.totalCost));
+
+    // P1.8 — the single costing rule surfaces recordedCost without double-counting
+    const costing = require('./costing');
+    ok(costing.jobTotal({ labourCost: 6400, receivedPartsCost: 500, issuesCost: 100, recordedCost: 50000 }) === 50000
+        && costing.jobTotal({ labourCost: 6400, receivedPartsCost: 500, issuesCost: 100, recordedCost: 1000 }) === 7000,
+        'jobTotal = max(computed, recordedCost) — surfaces recorded, never double-counts');
+    // P1.7 — jobKpis exposes issues + recorded so org totals reconcile with per-job
+    let { body: dk } = await j(await fetch(BASE + '/api/dashboard'));
+    ok(typeof dk.jobs.issuesCost === 'number' && typeof dk.jobs.recordedCost === 'number' && dk.jobs.totalCost >= dk.jobs.recordedCost,
+        'dashboard jobKpis includes issuesCost + recordedCost in the total');
+
+    // P1 (downgraded) — editing an issue preserves its manual price (no silent re-derive)
+    await j(await fetch(BASE + '/api/issues/' + jcIssue.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ issueDate: '2026-06-10', vehicleMachinery: 'TEST-VH', itemName: 'JC Consumable', qty: 6, jobCardId: jcId }) }));
+    let { body: issAfter } = await j(await fetch(BASE + '/api/jobcards/' + jcId));
+    const editedIssue = (issAfter.linkedIssues || []).find((s) => s.id === jcIssue.id);
+    ok(editedIssue && editedIssue.unitPrice === 25 && editedIssue.qty === 6,
+        'editing an issue keeps its manual unit price (25) while qty changes', 'price=' + (editedIssue && editedIssue.unitPrice));
     await j(await fetch(BASE + '/api/issues/' + jcIssue.id, { method: 'DELETE' }));
 
     let { body: dash } = await j(await fetch(BASE + '/api/dashboard'));

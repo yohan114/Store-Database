@@ -11,12 +11,13 @@
  */
 
 const db = require('./db');
-const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const costing = require('./costing');
+const round2 = costing.round2;
 
-// Canonical values are 'Head Office Purchase' / 'Local Purchase'; the older
-// spellings stay in the lists so rows written by legacy clients still classify.
-const HEAD_OFFICE = ['head office purchase', 'direct purchase', 'head office', 'pre-ordered'];
-const LOCAL = ['local purchase', 'local store'];
+// Source taxonomy comes from costing.js (the single source of truth) so the
+// dashboard, the item endpoints and the SQL can never disagree (finding 9).
+const HEAD_OFFICE = costing.HEAD_OFFICE;
+const LOCAL = costing.LOCAL;
 
 const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
 const yearStart = () => `${new Date().getFullYear()}-01-01`;
@@ -25,10 +26,7 @@ const today = () => localISO(new Date());
 const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return localISO(d); };
 
 // SQL CASE that classifies a receipt's purchaseSource into an origin bucket.
-const ORIGIN_CASE = `CASE
-    WHEN LOWER(TRIM(r.purchaseSource)) IN (${HEAD_OFFICE.map((v) => `'${v}'`).join(',')}) THEN 'headOffice'
-    WHEN LOWER(TRIM(r.purchaseSource)) IN (${LOCAL.map((v) => `'${v}'`).join(',')}) THEN 'local'
-    ELSE 'other' END`;
+const ORIGIN_CASE = costing.originCaseSql('r.purchaseSource');
 
 function receiptWhere(f) {
     const where = ["r.transactionType='Receive'", 'r.unitPrice IS NOT NULL'];
@@ -136,15 +134,32 @@ function jobKpis() {
     const counts = { OPEN: 0, IN_PROGRESS: 0, ON_HOLD: 0, COMPLETED: 0, CLOSED: 0 };
     let total = 0;
     db.all('SELECT status, COUNT(*) AS c FROM jobcards GROUP BY status').forEach((r) => { counts[r.status] = r.c; total += r.c; });
-    const labour = round2((db.get('SELECT COALESCE(SUM(labourCost),0) AS s FROM jobcards') || {}).s);
-    const parts = round2((db.get(
-        `SELECT COALESCE(SUM(r.qty*r.unitPrice),0) AS s FROM receipts r JOIN items i ON i.id=r.itemId
-         WHERE r.transactionType='Receive' AND r.unitPrice IS NOT NULL AND i.jobCardId IS NOT NULL`) || {}).s);
+    // Per-job rollup (received parts + priced issues), then the single costing
+    // rule summed across all jobs — so the org-wide total reconciles with the
+    // per-job totals and includes issues + recordedCost (findings 7 & 8).
+    const rows = db.all(
+        `SELECT j.id, j.labourCost, j.recordedCost,
+                COALESCE(p.c,0) AS receivedPartsCost, COALESCE(s.c,0) AS issuesCost
+         FROM jobcards j
+         LEFT JOIN (SELECT i.jobCardId AS jid, ${costing.RECEIVED_PARTS_SUM} AS c
+                    FROM items i JOIN receipts r ON r.itemId=i.id GROUP BY i.jobCardId) p ON p.jid=j.id
+         LEFT JOIN (SELECT s.jobCardId AS jid, ${costing.ISSUES_SUM} AS c
+                    FROM issues s GROUP BY s.jobCardId) s ON s.jid=j.id`);
+    let labour = 0, parts = 0, issues = 0, recorded = 0, grand = 0;
+    rows.forEach((r) => {
+        labour += Number(r.labourCost) || 0;
+        parts += Number(r.receivedPartsCost) || 0;
+        issues += Number(r.issuesCost) || 0;
+        recorded += Number(r.recordedCost) || 0;   // shown as a labelled column
+        grand += costing.jobTotal(r);
+    });
     return {
         open: counts.OPEN, inProgress: counts.IN_PROGRESS, onHold: counts.ON_HOLD,
         completed: counts.COMPLETED, closed: counts.CLOSED, total,
         active: counts.OPEN + counts.IN_PROGRESS + counts.ON_HOLD,
-        labourCost: labour, partsCost: parts, totalCost: round2(labour + parts),
+        labourCost: round2(labour), partsCost: round2(parts + issues),
+        receivedPartsCost: round2(parts), issuesCost: round2(issues),
+        recordedCost: round2(recorded), totalCost: round2(grand),
     };
 }
 

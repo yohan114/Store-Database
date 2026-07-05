@@ -39,12 +39,24 @@
         // Category + Issues state
         const FALLBACK_CATEGORIES = ['Battery','Filters','Tyre','Oil & Lubricants','Electrical','Bearings & Seals','Belts','Hydraulics','General Items'];
 
+        // Purchase-source taxonomy — the client mirror of costing.js
+        // (PURCHASE_SOURCES). Keep these alias lists in sync with that file;
+        // both classify the same spellings. One list drives every client use.
+        const SOURCE_LOCAL = ['local purchase', 'local store', 'local'];
+        const SOURCE_HEAD_OFFICE = ['head office purchase', 'headoffice purchase', 'direct purchase', 'head office', 'headoffice', 'pre-ordered'];
         // Fold any legacy purchase-source spelling into the two canonical values.
         function canonicalSourceText(v) {
             const t = String(v || '').trim().toLowerCase();
-            if (['local store', 'local purchase', 'local'].includes(t)) return 'Local Purchase';
-            if (['direct purchase', 'head office', 'pre-ordered', 'head office purchase', 'headoffice purchase'].includes(t)) return 'Head Office Purchase';
+            if (SOURCE_LOCAL.includes(t)) return 'Local Purchase';
+            if (SOURCE_HEAD_OFFICE.includes(t)) return 'Head Office Purchase';
             return String(v || '');
+        }
+        // Classify a purchaseSource into a dashboard origin bucket.
+        function originOfSource(v) {
+            const t = String(v || '').trim().toLowerCase();
+            if (SOURCE_HEAD_OFFICE.includes(t)) return 'headOffice';
+            if (SOURCE_LOCAL.includes(t)) return 'local';
+            return 'other';
         }
 
         // Total qty already issued against a request item. One shared rule for
@@ -3641,13 +3653,12 @@
                             dailyData[date].unpricedCount++;
                         }
 
-                        const src = (r.purchaseSource || '').trim().toLowerCase();
-                        let category = 'other';
-                        if (src === 'head office purchase' || src === 'direct purchase' || src === 'head office' || src === 'pre-ordered') {
-                            category = 'headOffice';
+                        const origin = originOfSource(r.purchaseSource);
+                        // Downstream badges use 'localPurchase' for the local bucket.
+                        const sourceCategory = origin === 'local' ? 'localPurchase' : origin;
+                        if (origin === 'headOffice') {
                             dailyData[date].hoValue += cost;
-                        } else if (src === 'local store' || src === 'local purchase') {
-                            category = 'localPurchase';
+                        } else if (origin === 'local') {
                             dailyData[date].lpValue += cost;
                         } else {
                             dailyData[date].otherValue += cost;
@@ -3660,7 +3671,7 @@
                             vehicleMachinery: item.vehicleMachinery,
                             cost: cost,
                             isPriced: isPriced,
-                            sourceCategory: category
+                            sourceCategory: sourceCategory
                         });
                     }
                 });
@@ -5049,9 +5060,9 @@
                     <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Received Parts</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.receivedPartsCost || 0)}</div></div>
                     <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Issued Items</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.issuesCost || 0)}</div></div>
                     <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Labour</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.labourCost || 0)}</div></div>
-                    <div class="rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Total Job Cost</div><div class="text-base font-black text-indigo-700 dark:text-indigo-400 mt-0.5">${jcCur(jc.totalCost || 0)}</div><div class="text-[9px] font-semibold text-indigo-400/80 mt-0.5">parts ${jcCur(jc.partsCost || 0)} + labour ${jcCur(jc.labourCost || 0)}</div></div>
+                    <div class="rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Total Job Cost</div><div class="text-base font-black text-indigo-700 dark:text-indigo-400 mt-0.5">${jcCur(jc.totalCost || 0)}</div><div class="text-[9px] font-semibold text-indigo-400/80 mt-0.5">${(jc.recordedCost != null && jc.recordedCost > 0 && jc.recordedCost >= (jc.computedCost || 0)) ? 'recorded service cost' : `parts ${jcCur(jc.partsCost || 0)} + labour ${jcCur(jc.labourCost || 0)}`}</div></div>
                 </div>
-                ${jc.recordedCost != null && jc.recordedCost > 0 ? `<div class="mb-5 -mt-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 rounded-xl px-3 py-2">Externally recorded cost (service log / C-job): <span class="font-black text-slate-700 dark:text-slate-200">${jcCur(jc.recordedCost)}</span> <span class="text-slate-400">— shown for reference, not added to the computed total above.</span></div>` : ''}
+                ${jc.recordedCost != null && jc.recordedCost > 0 ? `<div class="mb-5 -mt-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 rounded-xl px-3 py-2">Externally recorded cost (imported service log / C-job): <span class="font-black text-slate-700 dark:text-slate-200">${jcCur(jc.recordedCost)}</span> <span class="text-slate-400">${jc.recordedCost >= (jc.computedCost || 0) ? '— this is the job total above (larger than the Rs ' + jcCur(jc.computedCost || 0) + ' computed from live parts + labour).' : '— the live computed total above is larger, so it is used instead.'}</span></div>` : ''}
 
                 <!-- Daily Programme mount (Phase 3) -->
                 <div id="jcProgrammeMount"></div>

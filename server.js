@@ -19,6 +19,7 @@ const dbApi = require('./db');
 const { toISO, nowISO } = dbApi;
 const { classify, CATEGORIES } = require('./categorize');
 const auth = require('./auth');
+const costing = require('./costing');
 const jobcards = require('./jobcards');
 const programme = require('./programme');
 const dashboard = require('./dashboard');
@@ -421,21 +422,9 @@ const ITEM_SORTS = {
     gap: '(reqQty - recQty)',
 };
 
-// Canonical source values. Requests are sourced 'Local' or 'Head Office';
-// deliveries are 'Local Purchase' or 'Head Office Purchase'. Legacy spellings
-// are folded into the canonical ones so old clients/imports can't fragment.
-function normRequestSource(v) {
-    const t = String(v || '').trim().toLowerCase();
-    if (t === 'local') return 'Local';
-    if (t === 'head office' || t === 'headoffice') return 'Head Office';
-    return null;
-}
-function canonicalPurchaseSource(v) {
-    const t = String(v || '').trim().toLowerCase();
-    if (['local store', 'local purchase', 'local'].includes(t)) return 'Local Purchase';
-    if (['direct purchase', 'head office', 'pre-ordered', 'head office purchase', 'headoffice purchase'].includes(t)) return 'Head Office Purchase';
-    return s(v);
-}
+// Canonical source values come from costing.js (the single source of truth) so
+// requests/deliveries/dashboard/export can never fragment (finding 9).
+const { normRequestSource, canonicalPurchaseSource } = costing;
 
 // Build the item-level WHERE clause shared by list + count queries.
 function buildItemWhere(q) {
@@ -778,14 +767,19 @@ app.put('/api/issues/:id', (req, res) => {
         const itemName = s(b.itemName);
         const itemDesc = s(b.itemDesc);
         const category = b.category && String(b.category).trim() ? String(b.category).trim() : classify(itemName, itemDesc);
-        const existing = dbApi.get(`SELECT itemId FROM issues WHERE id=?`, [id]);
+        const existing = dbApi.get(`SELECT itemId, unitPrice FROM issues WHERE id=?`, [id]);
         if (!existing) return res.status(404).json({ error: 'Issue not found' });
         const itemId = Object.prototype.hasOwnProperty.call(b, 'itemId')
             ? (b.itemId ? parseInt(b.itemId) : null)
             : existing.itemId;
         const qty = Number(b.qty) || 0;
+        // Price precedence: an explicit unitPrice in the body wins (including a
+        // deliberate clear to null); else re-derive only when resuggestPrice is
+        // asked for; otherwise keep the stored price so an unrelated edit can't
+        // silently clobber a hand-entered one (review: latent issue-price asymmetry).
         const unitPrice = Object.prototype.hasOwnProperty.call(b, 'unitPrice')
-            ? numOrNull(b.unitPrice) : suggestIssuePrice(itemName);
+            ? numOrNull(b.unitPrice)
+            : (b.resuggestPrice ? suggestIssuePrice(itemName) : (existing.unitPrice != null ? existing.unitPrice : suggestIssuePrice(itemName)));
         const stockErr = checkIssueStock({ itemId, qty, excludeIssueId: id });
         if (stockErr) return res.status(400).json({ error: stockErr });
         dbApi.run(
@@ -1425,15 +1419,23 @@ app.get('/api/export/excel', (req, res) => {
         }
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(transfersSheet), 'Material Transfers');
 
-        // --- Job Cards sheet (with parts + labour + total cost) ---
+        // --- Job Cards sheet (labour + parts + issues + recorded + total) ---
+        // Same rollup as list()/get()/jobKpis so the export reconciles with the
+        // dashboard and the per-job cockpit (findings 6-8).
         const jobRows = dbApi.all(`SELECT j.*,
-            COALESCE((SELECT SUM(CASE WHEN r.transactionType='Receive' AND r.unitPrice IS NOT NULL THEN r.qty*r.unitPrice ELSE 0 END)
-                      FROM receipts r JOIN items i ON i.id=r.itemId WHERE i.jobCardId=j.id),0) AS partsCost
-            FROM jobcards j ORDER BY j.id DESC`);
-        const jobSheet = [['Job No', 'Type', 'Status', 'Date', 'Vehicle/Machinery', 'Project', 'Repair Type', 'Driver', 'Labour (Rs.)', 'Parts (Rs.)', 'Total Job Cost (Rs.)', 'Details']];
+            COALESCE(p.c,0) AS receivedPartsCost, COALESCE(s.c,0) AS issuesCost
+            FROM jobcards j
+            LEFT JOIN (SELECT i.jobCardId AS jid, ${costing.RECEIVED_PARTS_SUM} AS c
+                       FROM items i JOIN receipts r ON r.itemId=i.id GROUP BY i.jobCardId) p ON p.jid=j.id
+            LEFT JOIN (SELECT s.jobCardId AS jid, ${costing.ISSUES_SUM} AS c
+                       FROM issues s GROUP BY s.jobCardId) s ON s.jid=j.id
+            ORDER BY j.id DESC`);
+        const jobSheet = [['Job No', 'Type', 'Status', 'Date', 'Vehicle/Machinery', 'Project', 'Repair Type', 'Driver', 'Labour (Rs.)', 'Received Parts (Rs.)', 'Issued Parts (Rs.)', 'Recorded Service (Rs.)', 'Total Job Cost (Rs.)', 'Details']];
         for (const jc of jobRows) {
-            const parts = Math.round((jc.partsCost || 0) * 100) / 100;
-            jobSheet.push([jc.jobNo || '', jc.type || '', jc.status || '', jc.dateISO || jc.date || '', jc.vehicleMachinery || '', jc.projectName || '', jc.repairType || '', jc.driverName || '', jc.labourCost || 0, parts, Math.round(((jc.labourCost || 0) + parts) * 100) / 100, jc.details || '']);
+            const received = costing.round2(jc.receivedPartsCost || 0);
+            const issued = costing.round2(jc.issuesCost || 0);
+            const recorded = (jc.recordedCost != null && jc.recordedCost > 0) ? costing.round2(jc.recordedCost) : 0;
+            jobSheet.push([jc.jobNo || '', jc.type || '', jc.status || '', jc.dateISO || jc.date || '', jc.vehicleMachinery || '', jc.projectName || '', jc.repairType || '', jc.driverName || '', jc.labourCost || 0, received, issued, recorded, costing.jobTotal(jc), jc.details || '']);
         }
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(jobSheet), 'Job Cards');
 

@@ -14,6 +14,7 @@
 
 const db = require('./db');
 const programme = require('./programme');
+const costing = require('./costing');
 
 const STATUSES = ['OPEN', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CLOSED'];
 
@@ -215,9 +216,12 @@ function get(id) {
     jc.issuesCount = (jc.linkedIssues || []).length;
     jc.issuesCost = round2((jc.linkedIssues || []).reduce((sum, s) => sum + (s.lineCost || 0), 0));
     jc.unpricedIssues = (jc.linkedIssues || []).filter((s) => s.unpriced).length;
-    // Parts = received materials + issued consumables; Total = labour + parts.
+    // Parts = received materials + issued consumables; Total via the single
+    // costing rule (labour+parts+issues, or the larger imported recordedCost).
     jc.partsCost = round2(jc.receivedPartsCost + jc.issuesCost);
-    jc.totalCost = round2((jc.labourCost || 0) + jc.partsCost);
+    jc.recordedCost = (jc.recordedCost != null && jc.recordedCost > 0) ? round2(jc.recordedCost) : null;
+    jc.computedCost = costing.computedCost(jc);
+    jc.totalCost = costing.jobTotal(jc);
     // Per-mechanic labour breakdown per daily line (rate × full hours each),
     // mirroring the workshop's "Mechanic Breakdown" — for the cost cockpit.
     const rm = programme.rateMap();
@@ -264,7 +268,30 @@ function list(q = {}) {
         `SELECT * FROM jobcards ${whereSql} ORDER BY ${orderBy} ${dir}, id DESC LIMIT ? OFFSET ?`,
         [...params, limit, offset]
     );
-    rows.forEach((r) => { r.totalCost = (r.labourCost || 0) + 0; });
+    // Attach parts + issues cost for just this page with two GROUP-BY lookups
+    // (not per-row correlated subqueries), then apply the one costing rule so
+    // the grid total matches the detail view exactly (review finding 6).
+    const ids = rows.map((r) => r.id);
+    if (ids.length) {
+        const ph = ids.map(() => '?').join(',');
+        const partsMap = new Map();
+        db.all(`SELECT i.jobCardId AS jid, COALESCE(${costing.RECEIVED_PARTS_SUM},0) AS c
+                FROM items i JOIN receipts r ON r.itemId=i.id
+                WHERE i.jobCardId IN (${ph}) GROUP BY i.jobCardId`, ids)
+            .forEach((x) => partsMap.set(x.jid, x.c));
+        const issMap = new Map();
+        db.all(`SELECT s.jobCardId AS jid, COALESCE(${costing.ISSUES_SUM},0) AS c
+                FROM issues s WHERE s.jobCardId IN (${ph}) GROUP BY s.jobCardId`, ids)
+            .forEach((x) => issMap.set(x.jid, x.c));
+        rows.forEach((r) => {
+            r.receivedPartsCost = round2(partsMap.get(r.id) || 0);
+            r.issuesCost = round2(issMap.get(r.id) || 0);
+            r.partsCost = round2(r.receivedPartsCost + r.issuesCost);
+            r.recordedCost = (r.recordedCost != null && r.recordedCost > 0) ? round2(r.recordedCost) : null;
+            r.computedCost = costing.computedCost(r);
+            r.totalCost = costing.jobTotal(r);
+        });
+    }
     return { jobcards: rows, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 

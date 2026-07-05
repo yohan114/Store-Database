@@ -13,6 +13,7 @@
  */
 const path = require('path');
 const fs = require('fs');
+const costing = require('./costing');   // purchase-source taxonomy (single source of truth)
 
 const DB_FILE = process.env.INVENTORY_DB || path.join(__dirname, 'inventory.db');
 
@@ -423,23 +424,25 @@ function init() {
         if (!cols.some(c => c.name === 'unitPrice')) exec(`ALTER TABLE issues ADD COLUMN unitPrice REAL;`);
     } catch (e) { /* fresh DB already has it */ }
 
-    // Migration: an externally-recorded flat cost on a job card (service-log /
-    // C-job totals that predate the per-mechanic computed model). Shown for
-    // reference alongside — never folded into — the computed labour+parts total.
+    // Migration: an externally-recorded flat cost on a job card (imported
+    // service-log / C-job totals that predate the per-mechanic computed model).
+    // The costing rule (costing.jobTotal) takes max(computed, recordedCost), so
+    // these ≈Rs 4.9M of service costs surface without double-counting.
     try {
         const cols = all(`PRAGMA table_info(jobcards)`);
         if (!cols.some(c => c.name === 'recordedCost')) exec(`ALTER TABLE jobcards ADD COLUMN recordedCost REAL;`);
     } catch (e) { /* fresh DB already has it */ }
 
-    // Normalise purchase sources to the two canonical values. Idempotent and
-    // cheap, so it runs on every boot — old spellings can never accumulate.
+    // Normalise purchase sources to the canonical values from the shared
+    // taxonomy (costing.PURCHASE_SOURCES). Idempotent + cheap, so it runs every
+    // boot — old spellings can never accumulate and the alias list lives in one
+    // place. A new alias is picked up here automatically.
     try {
-        run(`UPDATE receipts SET purchaseSource='Local Purchase'
-              WHERE LOWER(TRIM(purchaseSource)) IN ('local store','local purchase')
-                AND purchaseSource <> 'Local Purchase'`);
-        run(`UPDATE receipts SET purchaseSource='Head Office Purchase'
-              WHERE LOWER(TRIM(purchaseSource)) IN ('direct purchase','head office','pre-ordered','head office purchase')
-                AND purchaseSource <> 'Head Office Purchase'`);
+        for (const src of costing.PURCHASE_SOURCES) {
+            const ph = src.aliases.map(() => '?').join(',');
+            run(`UPDATE receipts SET purchaseSource=? WHERE LOWER(TRIM(purchaseSource)) IN (${ph}) AND purchaseSource <> ?`,
+                [src.canonical, ...src.aliases, src.canonical]);
+        }
     } catch (e) { /* table may not exist yet on a brand-new DB */ }
     return db;
 }

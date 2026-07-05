@@ -13,6 +13,9 @@
  */
 
 const db = require('./db');
+const programme = require('./programme');
+const costing = require('./costing');
+const config = require('./config');
 
 const STATUSES = ['OPEN', 'IN_PROGRESS', 'ON_HOLD', 'COMPLETED', 'CLOSED'];
 
@@ -30,7 +33,7 @@ const numOrNull = (v) => (v === null || v === undefined || v === '' || isNaN(Num
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 // --- vehicle + date matching (shared rule with tools/import_workshop.js) -----
-const WINDOW_DAYS = 2;
+const WINDOW_DAYS = config.WINDOW_DAYS;
 const normVeh = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
 function vehSet(v) {
     const parts = String(v || '').split(/[\/,]/).map(normVeh).filter(Boolean);
@@ -200,13 +203,36 @@ function get(id) {
     });
     jc.pendingCount = (jc.linkedItems || []).filter((it) => it.notReceived).length;
     jc.unpricedItems = (jc.linkedItems || []).filter((it) => it.unpriced).length;
-    jc.partsCost = round2((jc.linkedItems || []).reduce((sum, it) => sum + (it.lineCost || 0), 0));
-    jc.totalCost = round2((jc.labourCost || 0) + jc.partsCost);
-    // Issued items (consumables) linked to this job — informational, no cost.
+    jc.receivedPartsCost = round2((jc.linkedItems || []).reduce((sum, it) => sum + (it.lineCost || 0), 0));
+    // Issued items (consumables) linked to this job — now priced, so they
+    // contribute to job cost. Each carries a unit price (auto-derived from the
+    // item's priced deliveries, editable on the Issue Desk); lineCost = qty×price.
     try {
-        jc.linkedIssues = db.all('SELECT id, issueDate, issueDateISO, itemName, qty, category, issuedTo FROM issues WHERE jobCardId=? ORDER BY issueDateISO DESC, id DESC', [id]);
+        jc.linkedIssues = db.all('SELECT id, issueDate, issueDateISO, itemName, qty, category, issuedTo, unitPrice FROM issues WHERE jobCardId=? ORDER BY issueDateISO DESC, id DESC', [id]);
     } catch (_) { jc.linkedIssues = []; }
+    (jc.linkedIssues || []).forEach((s) => {
+        s.lineCost = (s.unitPrice != null) ? round2((Number(s.qty) || 0) * s.unitPrice) : 0;
+        s.unpriced = (s.unitPrice == null);
+    });
     jc.issuesCount = (jc.linkedIssues || []).length;
+    jc.issuesCost = round2((jc.linkedIssues || []).reduce((sum, s) => sum + (s.lineCost || 0), 0));
+    jc.unpricedIssues = (jc.linkedIssues || []).filter((s) => s.unpriced).length;
+    // Parts = received materials + issued consumables; Total via the single
+    // costing rule (labour+parts+issues, or the larger imported recordedCost).
+    jc.partsCost = round2(jc.receivedPartsCost + jc.issuesCost);
+    jc.recordedCost = (jc.recordedCost != null && jc.recordedCost > 0) ? round2(jc.recordedCost) : null;
+    jc.computedCost = costing.computedCost(jc);
+    jc.totalCost = costing.jobTotal(jc);
+    // Per-mechanic labour breakdown per daily line (rate × full hours each),
+    // mirroring the workshop's "Mechanic Breakdown" — for the cost cockpit.
+    const rm = programme.rateMap();
+    (jc.programme || []).forEach((dp) => {
+        const hours = Number(dp.hours) || 0;
+        dp.mechanicBreakdown = String(dp.mechanics || '').split(',').map((x) => x.trim()).filter(Boolean).map((name) => {
+            const rate = programme.rateFor(name, rm);
+            return { name, rate, hours, cost: rate ? round2(hours * rate) : 0 };
+        });
+    });
     return jc;
 }
 
@@ -243,15 +269,38 @@ function list(q = {}) {
         `SELECT * FROM jobcards ${whereSql} ORDER BY ${orderBy} ${dir}, id DESC LIMIT ? OFFSET ?`,
         [...params, limit, offset]
     );
-    rows.forEach((r) => { r.totalCost = (r.labourCost || 0) + 0; });
+    // Attach parts + issues cost for just this page with two GROUP-BY lookups
+    // (not per-row correlated subqueries), then apply the one costing rule so
+    // the grid total matches the detail view exactly (review finding 6).
+    const ids = rows.map((r) => r.id);
+    if (ids.length) {
+        const ph = ids.map(() => '?').join(',');
+        const partsMap = new Map();
+        db.all(`SELECT i.jobCardId AS jid, COALESCE(${costing.RECEIVED_PARTS_SUM},0) AS c
+                FROM items i JOIN receipts r ON r.itemId=i.id
+                WHERE i.jobCardId IN (${ph}) GROUP BY i.jobCardId`, ids)
+            .forEach((x) => partsMap.set(x.jid, x.c));
+        const issMap = new Map();
+        db.all(`SELECT s.jobCardId AS jid, COALESCE(${costing.ISSUES_SUM},0) AS c
+                FROM issues s WHERE s.jobCardId IN (${ph}) GROUP BY s.jobCardId`, ids)
+            .forEach((x) => issMap.set(x.jid, x.c));
+        rows.forEach((r) => {
+            r.receivedPartsCost = round2(partsMap.get(r.id) || 0);
+            r.issuesCost = round2(issMap.get(r.id) || 0);
+            r.partsCost = round2(r.receivedPartsCost + r.issuesCost);
+            r.recordedCost = (r.recordedCost != null && r.recordedCost > 0) ? round2(r.recordedCost) : null;
+            r.computedCost = costing.computedCost(r);
+            r.totalCost = costing.jobTotal(r);
+        });
+    }
     return { jobcards: rows, total, page, limit, totalPages: Math.ceil(total / limit) };
 }
 
 function remove(id) {
     db.run('DELETE FROM job_audits WHERE jobCardId=?', [id]);
     try { db.run('DELETE FROM daily_programme WHERE jobCardId=?', [id]); } catch (_) {}
-    try { db.run('UPDATE items SET jobCardId=NULL, jobNo=NULL WHERE jobCardId=?', [id]); } catch (_) {}
-    try { db.run('UPDATE issues SET jobCardId=NULL, jobNo=NULL WHERE jobCardId=?', [id]); } catch (_) {}
+    try { db.run('UPDATE items SET jobCardId=NULL, jobNo=NULL, linkMethod=NULL, linkGap=NULL WHERE jobCardId=?', [id]); } catch (_) {}
+    try { db.run('UPDATE issues SET jobCardId=NULL, jobNo=NULL, linkMethod=NULL, linkGap=NULL WHERE jobCardId=?', [id]); } catch (_) {}
     db.run('DELETE FROM jobcards WHERE id=?', [id]);
     return { success: true };
 }

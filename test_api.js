@@ -1,9 +1,26 @@
 // Self-contained API test: boots the server on a fresh port, exercises every
 // endpoint via fetch, prints a report, then exits. No shell sleep / no lingering process.
-process.env.PORT = '4173';
-require('./server.js');
+//
+// Runs against a DISPOSABLE COPY of inventory.db (never the live/committed DB),
+// so a crashed test can't leave orphan rows in production data. In CI where no
+// inventory.db exists yet, `npm run migrate` builds one first.
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const SRC_DB = process.env.SRC_INVENTORY_DB || path.join(__dirname, 'inventory.db');
+const TEST_DB = path.join(os.tmpdir(), `test_inventory_${process.pid}.db`);
+if (fs.existsSync(SRC_DB)) fs.copyFileSync(SRC_DB, TEST_DB);
+process.env.INVENTORY_DB = TEST_DB;
+const cleanupTestDb = () => { for (const s of ['', '-wal', '-shm']) { try { fs.unlinkSync(TEST_DB + s); } catch (_) {} } };
+process.on('exit', cleanupTestDb);
 
-const BASE = 'http://localhost:4173';
+process.env.PORT = process.env.PORT || '4173';
+// server.js no longer listens when required as a module (it is embeddable in
+// the unified E&C server), so the test owns the socket itself.
+const app = require('./server.js');
+app.listen(process.env.PORT, '127.0.0.1');
+
+const BASE = `http://localhost:${process.env.PORT}`;
 const delay = (ms) => new Promise(r => setTimeout(r, ms));
 const j = async (res) => ({ status: res.status, body: await res.json().catch(() => null) });
 let pass = 0, fail = 0;
@@ -90,9 +107,9 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ok(issList[0].qty === 9 && issList[0].issuedTo === 'Site B', 'PUT /api/issues updates');
 
     // DELETE everything we created
-    let { body: dIss } = await j(await fetch(BASE + '/api/issues/' + issId, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
-    let { body: dRec } = await j(await fetch(BASE + '/api/receipts/' + recId + '?password=E%26CWorkshop', { method: 'DELETE' }));
-    let { body: dItem } = await j(await fetch(BASE + '/api/items/' + itemId + '?password=E%26CWorkshop', { method: 'DELETE' }));
+    let { body: dIss } = await j(await fetch(BASE + '/api/issues/' + issId, { method: 'DELETE' }));
+    let { body: dRec } = await j(await fetch(BASE + '/api/receipts/' + recId + '', { method: 'DELETE' }));
+    let { body: dItem } = await j(await fetch(BASE + '/api/items/' + itemId + '', { method: 'DELETE' }));
     ok(dIss.success && dRec.success && dItem.success, 'DELETE issue/receipt/item');
 
     // confirm cleanup
@@ -144,9 +161,14 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     { const r = await _fetch(BASE + '/inventory.db'); ok(r.status === 404, 'inventory.db is not downloadable'); }
     { const r = await _fetch(BASE + '/tracker_data.json'); ok(r.status === 404, 'tracker_data.json is not downloadable'); }
 
+    // compiled client scripts: app bundle behind login, login script public
+    { const r = await _fetch(BASE + '/js/app.js', { redirect: 'manual' }); ok(r.status === 302, 'unauthenticated /js/app.js redirects to login'); }
+    { const r = await _fetch(BASE + '/js/login.js'); ok(r.status === 200 && (await r.text()).includes('loginForm'), '/js/login.js served publicly'); }
+    { const r = await fetch(BASE + '/js/app.js'); ok(r.status === 200 && (await r.text()).includes('DatabaseSync'), 'authenticated /js/app.js serves the compiled app'); }
+
     // cleanup this block
-    await j(await fetch(BASE + '/api/issues/' + okIss.id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
-    await j(await fetch(BASE + '/api/items/' + rsId + '?password=E%26CWorkshop', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/issues/' + okIss.id, { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/items/' + rsId + '', { method: 'DELETE' }));
     ({ body: page } = await j(await fetch(BASE + '/api/items?page=1&limit=1&search=TEST-RS-1')));
     ok(page.total === 0, 'request-source test cleanup verified');
 
@@ -277,12 +299,10 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
 
     // 11. Delete battery records (cleanup)
     let { status: bDel1Status } = await j(await fetch(BASE + '/api/batteries/' + bat1Id, {
-        method: 'DELETE',
-        headers: { 'x-delete-password': 'E&CWorkshop' }
+        method: 'DELETE'
     }));
     let { status: bDel2Status } = await j(await fetch(BASE + '/api/batteries/' + bat2Id, {
-        method: 'DELETE',
-        headers: { 'x-delete-password': 'E&CWorkshop' }
+        method: 'DELETE'
     }));
     ok(bDel1Status === 200 && bDel2Status === 200, 'DELETE batteries clean up');
 
@@ -341,18 +361,17 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     }));
     ok(mtUpdStatus === 200 && mtUpd.success && mtUpd.category === 'Consumables', 'Update transfer details with manual category override');
 
-    // 5. Delete transfer without password (should fail)
-    let { status: mtDelFailStatus } = await j(await fetch(BASE + '/api/transfers/' + transferId, {
-        method: 'DELETE'
-    }));
-    ok(mtDelFailStatus === 401 || mtDelFailStatus === 403, 'DELETE transfer without password fails');
+    // 5. Delete requires the ADMIN role — a non-admin session is rejected (403)
+    const cNonAdmin = await (async () => {
+        const r = await _fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'transport', password: 'changeme123' }) });
+        const sc = r.headers.get('set-cookie'); return sc ? sc.split(';')[0] : '';
+    })();
+    let { status: mtDelFailStatus } = await j(await _fetch(BASE + '/api/transfers/' + transferId, { method: 'DELETE', headers: { Cookie: cNonAdmin } }));
+    ok(mtDelFailStatus === 403, 'DELETE transfer as non-admin is forbidden (403)');
 
-    // 6. Delete transfer with correct password (should succeed)
-    let { status: mtDelSuccessStatus } = await j(await fetch(BASE + '/api/transfers/' + transferId, {
-        method: 'DELETE',
-        headers: { 'x-delete-password': 'E&CWorkshop' }
-    }));
-    ok(mtDelSuccessStatus === 200, 'DELETE transfer with password succeeds');
+    // 6. Delete as ADMIN succeeds (no shared password needed)
+    let { status: mtDelSuccessStatus } = await j(await fetch(BASE + '/api/transfers/' + transferId, { method: 'DELETE' }));
+    ok(mtDelSuccessStatus === 200, 'DELETE transfer as admin succeeds');
 
     // 7. Verify deletion
     let { status: mtGoneStatus } = await j(await fetch(BASE + '/api/transfers/' + transferId));
@@ -383,6 +402,69 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ({ body: jcGet } = await j(await fetch(BASE + '/api/jobcards/' + jcId)));
     ok(jcGet.partsCost === 500 && jcGet.totalCost === 6900, 'parts cost from linked MRN + total job cost (500 + 6400 = 6900)', 'total=' + jcGet.totalCost);
 
+    // --- Cost cockpit: per-mechanic breakdown + issued items roll into total ---
+    ok(jcGet.receivedPartsCost === 500 && jcGet.issuesCost === 0, 'cockpit splits receivedParts (500) vs issued (0)');
+    const dpRow = (jcGet.programme || [])[0];
+    const bd = dpRow && dpRow.mechanicBreakdown;
+    ok(Array.isArray(bd) && bd.length === 2 && bd.find(m => m.name === 'Saman' && m.cost === 3400) && bd.find(m => m.name === 'Vinod' && m.cost === 3000),
+        'per-mechanic breakdown costs each at full hours (Saman 8×425=3400, Vinod 8×375=3000)');
+    // Link a PRICED issue to the job -> issuesCost + total rise
+    let { body: jcIssue } = await j(await fetch(BASE + '/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ issueDate: '2026-06-10', vehicleMachinery: 'TEST-VH', itemName: 'JC Consumable', qty: 4, unitPrice: 25, jobCardId: jcId }) }));
+    ({ body: jcGet } = await j(await fetch(BASE + '/api/jobcards/' + jcId)));
+    ok(jcGet.issuesCost === 100 && jcGet.partsCost === 600 && jcGet.totalCost === 7000,
+        'priced issue rolls into job cost (issued 4×25=100; parts 600; total 6400+600=7000)', 'total=' + jcGet.totalCost);
+
+    // P1.6 — the grid total (list) must equal the detail total (get), not labour only
+    let { body: jcList } = await j(await fetch(BASE + '/api/jobcards?search=TEST-VH&limit=50'));
+    const listRow = (jcList.jobcards || []).find((r) => r.id === jcId);
+    ok(listRow && listRow.totalCost === jcGet.totalCost && listRow.totalCost === 7000,
+        'list total equals detail total (parts+issues+labour, not labour only)', 'listTotal=' + (listRow && listRow.totalCost));
+
+    // P1.8 — the single costing rule surfaces recordedCost without double-counting
+    const costing = require('./costing');
+    ok(costing.jobTotal({ labourCost: 6400, receivedPartsCost: 500, issuesCost: 100, recordedCost: 50000 }) === 50000
+        && costing.jobTotal({ labourCost: 6400, receivedPartsCost: 500, issuesCost: 100, recordedCost: 1000 }) === 7000,
+        'jobTotal = max(computed, recordedCost) — surfaces recorded, never double-counts');
+    // P1.7 — jobKpis exposes issues + recorded so org totals reconcile with per-job
+    let { body: dk } = await j(await fetch(BASE + '/api/dashboard'));
+    ok(typeof dk.jobs.issuesCost === 'number' && typeof dk.jobs.recordedCost === 'number' && dk.jobs.totalCost >= dk.jobs.recordedCost,
+        'dashboard jobKpis includes issuesCost + recordedCost in the total');
+
+    // P1.13 — /api/summary is a cheap change signature + folds in unread count
+    let { body: summ } = await j(await fetch(BASE + '/api/summary'));
+    ok(typeof summ.version === 'string' && summ.version.split('|').length === 7 && typeof summ.unread === 'number',
+        'GET /api/summary returns 7-part change signature + unread count');
+    // P1.10 — GET /api/items (GROUP-BY aggregate) still reports received qty
+    let { body: itList } = await j(await fetch(BASE + '/api/items?page=1&limit=5'));
+    ok(Array.isArray(itList.items) && itList.items.every((it) => typeof it.recQty === 'number'),
+        'GET /api/items aggregate returns numeric recQty per row');
+    // P3 — /api/health is public + reports liveness
+    { const r = await _fetch(BASE + '/api/health'); const b = await r.json(); ok(r.status === 200 && b.status === 'ok' && typeof b.uptimeSeconds === 'number', 'GET /api/health returns ok (public, no auth)'); }
+
+    // P1 (downgraded) — editing an issue preserves its manual price (no silent re-derive)
+    await j(await fetch(BASE + '/api/issues/' + jcIssue.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ issueDate: '2026-06-10', vehicleMachinery: 'TEST-VH', itemName: 'JC Consumable', qty: 6, jobCardId: jcId }) }));
+    let { body: issAfter } = await j(await fetch(BASE + '/api/jobcards/' + jcId));
+    const editedIssue = (issAfter.linkedIssues || []).find((s) => s.id === jcIssue.id);
+    ok(editedIssue && editedIssue.unitPrice === 25 && editedIssue.qty === 6,
+        'editing an issue keeps its manual unit price (25) while qty changes', 'price=' + (editedIssue && editedIssue.unitPrice));
+    await j(await fetch(BASE + '/api/issues/' + jcIssue.id, { method: 'DELETE' }));
+
+    // P2.16 — an auto-linked item records its provenance (EXACT, in-window)
+    let { body: trJc } = await j(await fetch(BASE + '/api/jobcards', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'INTERNAL', vehicleMachinery: 'TRG-VH', date: '2026-06-20', details: 'trigger test' }) }));
+    const trJcId = trJc.jobcard.id;
+    let { body: trItem } = await j(await fetch(BASE + '/api/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mrnNum: 'TRG-1', vehicleMachinery: 'TRG-VH', itemName: 'Trig part', reqQty: 1, reqDate: '2026-06-20' }) }));
+    let { body: trItems } = await j(await fetch(BASE + '/api/items?search=TRG-1&page=1&limit=5'));
+    const linkedTr = (trItems.items || []).find((x) => x.mrnNum === 'TRG-1');
+    ok(linkedTr && linkedTr.jobCardId === trJcId && linkedTr.linkMethod === 'EXACT',
+        'auto-linked item records linkMethod=EXACT provenance', 'method=' + (linkedTr && linkedTr.linkMethod));
+    // P2.15 — deleting the job card unlinks its item via the FK-emulation trigger
+    await j(await fetch(BASE + '/api/jobcards/' + trJcId, { method: 'DELETE' }));
+    let { body: trItems2 } = await j(await fetch(BASE + '/api/items?search=TRG-1&page=1&limit=5'));
+    const afterDel = (trItems2.items || []).find((x) => x.mrnNum === 'TRG-1');
+    ok(afterDel && afterDel.jobCardId === null && afterDel.linkMethod === null,
+        'deleting a job card unlinks its item + clears provenance (FK trigger)', 'jobCardId=' + (afterDel && afterDel.jobCardId));
+    await j(await fetch(BASE + '/api/items/' + trItem.id, { method: 'DELETE' }));
+
     let { body: dash } = await j(await fetch(BASE + '/api/dashboard'));
     ok(typeof dash.spend.mtd === 'number' && typeof dash.spend.ytd === 'number' && !!dash.received && Array.isArray(dash.suppliers) && !!dash.jobs, 'GET /api/dashboard returns spend/received/suppliers/jobs');
 
@@ -394,8 +476,8 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
 
     // cleanup
     await j(await fetch(BASE + '/api/programme/' + dpId, { method: 'DELETE' }));
-    await j(await fetch(BASE + '/api/items/' + mItem.id + '?password=E%26CWorkshop', { method: 'DELETE' }));
-    await j(await fetch(BASE + '/api/jobcards/' + jcId, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    await j(await fetch(BASE + '/api/items/' + mItem.id + '', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/jobcards/' + jcId, { method: 'DELETE' }));
     let { status: goneSt } = await j(await fetch(BASE + '/api/jobcards/' + jcId));
     ok(goneSt === 404, 'job card cleanup verified');
 
@@ -450,14 +532,111 @@ const ok = (cond, label, extra = '') => { (cond ? pass++ : fail++); console.log(
     ok((alD3.linkedIssues || []).some((x) => x.id === issInId) && alD3.issuesCount >= 1, 'job linkedIssues includes the issued item');
 
     // cleanup
-    await j(await fetch(BASE + '/api/issues/' + issInId + '?password=E%26CWorkshop', { method: 'DELETE' }));
-    await j(await fetch(BASE + '/api/items/' + aiInId + '?password=E%26CWorkshop', { method: 'DELETE' }));
-    await j(await fetch(BASE + '/api/items/' + aiOutId + '?password=E%26CWorkshop', { method: 'DELETE' }));
-    await j(await fetch(BASE + '/api/jobcards/' + alJobId, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
-    await j(await fetch(BASE + '/api/jobcards/' + alJob2.jobcard.id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    await j(await fetch(BASE + '/api/issues/' + issInId + '', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/items/' + aiInId + '', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/items/' + aiOutId + '', { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/jobcards/' + alJobId, { method: 'DELETE' }));
+    await j(await fetch(BASE + '/api/jobcards/' + alJob2.jobcard.id, { method: 'DELETE' }));
     let { body: dwList } = await j(await fetch(BASE + '/api/jobcards?search=DW-ZZAUTO-X&limit=1'));
-    if (dwList.jobcards && dwList.jobcards[0]) await j(await fetch(BASE + '/api/jobcards/' + dwList.jobcards[0].id, { method: 'DELETE', headers: { 'x-delete-password': 'E&CWorkshop' } }));
+    if (dwList.jobcards && dwList.jobcards[0]) await j(await fetch(BASE + '/api/jobcards/' + dwList.jobcards[0].id, { method: 'DELETE' }));
     ok(true, 'auto-link test cleanup done');
+
+    // === OPERATIONS: job-request approval workflow ===
+    console.log('\n--- Running Operations Job-Request Tests ---');
+    // Separate sessions per role (seeded accounts). Uses the raw fetch so each
+    // keeps its own cookie, independent of the admin COOKIE used elsewhere.
+    async function loginAs(u, p) {
+        const r = await _fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: p }) });
+        const sc = r.headers.get('set-cookie'); return sc ? sc.split(';')[0] : '';
+    }
+    const jr = async (cookie, url, opts = {}) => {
+        const headers = Object.assign({ 'Content-Type': 'application/json', Cookie: cookie }, opts.headers || {});
+        const r = await _fetch(BASE + url, Object.assign({}, opts, { headers }));
+        return { status: r.status, body: await r.json().catch(() => null) };
+    };
+    const cTO = await loginAs('transport', 'changeme123');
+    const cTM = await loginAs('tmanager', 'changeme123');
+    const cOM = await loginAs('opsmanager', 'changeme123');
+    ok(!!cTO && !!cTM && !!cOM, 'seeded approver logins (transport / tmanager / opsmanager)');
+
+    // P3 — reopen→resubmit preserves the original reqNo (no re-mint / orphaned audits)
+    {
+        let a = await jr(cTO, '/api/job-requests', { method: 'POST', body: JSON.stringify({ title: 'Reopen test', vehicleMachinery: 'ROPEN-1', type: 'INTERNAL', submit: true }) });
+        const rid = a.body.request.id, firstReqNo = a.body.request.reqNo;
+        await jr(cTM, `/api/job-requests/${rid}/action`, { method: 'POST', body: JSON.stringify({ action: 'tmReject', note: 'nope' }) });
+        await jr(cTO, `/api/job-requests/${rid}/action`, { method: 'POST', body: JSON.stringify({ action: 'reopen' }) });
+        let b = await jr(cTO, `/api/job-requests/${rid}/action`, { method: 'POST', body: JSON.stringify({ action: 'submit' }) });
+        ok(b.body.request.reqNo === firstReqNo, 'reopen→resubmit keeps the original reqNo', 'reqNo=' + (b.body.request && b.body.request.reqNo));
+        await jr(COOKIE, `/api/job-requests/${rid}`, { method: 'DELETE', headers: { Cookie: COOKIE } });
+    }
+
+    // Transport Officer raises + submits
+    let rr = await jr(cTO, '/api/job-requests', { method: 'POST', body: JSON.stringify({ title: 'Test op job', details: 'x', vehicleMachinery: 'OPTEST-1', type: 'INTERNAL', submit: true }) });
+    ok(rr.status === 200 && rr.body.request.reqNo && rr.body.request.status === 'PENDING_TM', 'TO submit → JR number + PENDING_TM', 'reqNo=' + (rr.body.request && rr.body.request.reqNo));
+    const reqId = rr.body.request.id;
+    // Role gate: TO cannot tmApprove
+    let g = await jr(cTO, `/api/job-requests/${reqId}/action`, { method: 'POST', body: JSON.stringify({ action: 'tmApprove' }) });
+    ok(g.status === 403, 'TO cannot approve as Transport Manager (403)');
+    // TM approve → PENDING_OM
+    rr = await jr(cTM, `/api/job-requests/${reqId}/action`, { method: 'POST', body: JSON.stringify({ action: 'tmApprove' }) });
+    ok(rr.body.request.status === 'PENDING_OM', 'TM approve → PENDING_OM');
+    // OM approve → APPROVED + auto workshop job card
+    rr = await jr(cOM, `/api/job-requests/${reqId}/action`, { method: 'POST', body: JSON.stringify({ action: 'omApprove' }) });
+    ok(rr.body.request.status === 'APPROVED' && rr.body.request.jobCardId && rr.body.request.jobCard, 'OM approve → APPROVED + linked job card opened', 'jobCard=' + (rr.body.request.jobCard && rr.body.request.jobCard.jobNo));
+    const spawnedJobCard = rr.body.request.jobCardId;
+    // start + complete
+    await jr(cTO, `/api/job-requests/${reqId}/action`, { method: 'POST', body: JSON.stringify({ action: 'start' }) });
+    rr = await jr(cTO, `/api/job-requests/${reqId}/action`, { method: 'POST', body: JSON.stringify({ action: 'complete' }) });
+    ok(rr.body.request.status === 'COMPLETED', 'complete → COMPLETED');
+    // Completion notifies TO + OM
+    const nTO = await jr(cTO, '/api/notifications');
+    const nOM = await jr(cOM, '/api/notifications');
+    ok(nTO.body.unread >= 1 && nOM.body.unread >= 1 && /completed/i.test((nOM.body.notifications[0] || {}).message || ''), 'completion notifies Transport + Operational Manager');
+
+    // Outsourced request → e-mail logged to outbox on OM approval
+    await jr(cTM || COOKIE, '/api/settings/standing-cc', { method: 'POST', headers: { Cookie: COOKIE }, body: JSON.stringify({ standingCc: 'ops@enc.lk' }) });
+    let orr = await jr(cTO, '/api/job-requests', { method: 'POST', body: JSON.stringify({ title: 'Outside gearbox', type: 'OUTSOURCED', vehicleMachinery: 'OPTEST-2', vendorName: 'ABC', vendorEmail: 'abc@vendor.lk', emailRecipients: ['x@party.lk'], submit: true }) });
+    const oId = orr.body.request.id;
+    await jr(cTM, `/api/job-requests/${oId}/action`, { method: 'POST', body: JSON.stringify({ action: 'tmApprove' }) });
+    orr = await jr(cOM, `/api/job-requests/${oId}/action`, { method: 'POST', body: JSON.stringify({ action: 'omApprove' }) });
+    let { body: ob } = await j(await fetch(BASE + '/api/outbox'));
+    const mail = (ob.outbox || []).find((m) => m.reqNo === orr.body.request.reqNo);
+    ok(!!mail && mail.toAddr === 'abc@vendor.lk' && /ops@enc.lk/.test(mail.cc || ''), 'outsourced approval e-mails vendor + standing CC (outbox)', 'status=' + (mail && mail.status));
+
+    // P0.4 — outbox + standing-cc settings are ADMIN-gated
+    ok((await jr(cTO, '/api/outbox')).status === 403, 'non-admin cannot read outbox (403)');
+    ok((await jr(cTO, '/api/settings/standing-cc')).status === 403, 'non-admin cannot read standing CC (403)');
+    // P0.4 — the standing CC is not leaked on the public meta payload
+    ok((await jr(cTO, '/api/job-requests/meta')).body.standingCc === undefined, 'standing CC absent from public /meta');
+    // P0.4 — MIME builder strips CR/LF header injection (Bcc smuggle attempt)
+    {
+        const mailer = require('./mailer.js');
+        const mime = mailer.buildMime({ from: 'a@enc.lk', to: 'victim@x.lk\r\nBcc: evil@attacker.lk', cc: [], subject: 'Hi\r\nX-Injected: yes', text: 'body' });
+        // The injection is neutralised if no *line* begins with a smuggled header
+        // (the literal text may survive folded into a value, but not as a header).
+        const injectedHeader = mime.split('\r\n').some((l) => /^(Bcc|X-Injected):/i.test(l));
+        ok(!injectedHeader, 'buildMime strips CRLF header injection');
+        ok(mailer.splitEmails('good@x.lk, bad\r\nBcc: z@y.lk, also@z.lk').length === 2, 'splitEmails drops CRLF-injected addresses');
+    }
+    // P0.4 — login rate limiting: a throwaway username locks out after LOGIN_MAX_FAILS (8)
+    {
+        const attempt = () => _fetch(BASE + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'rl-nobody', password: 'wrong' }) });
+        let last = 401;
+        for (let i = 0; i < 9; i++) last = (await attempt()).status;   // 8 to trip, 9th is blocked
+        ok(last === 429, 'login locks out (429) after repeated failures', 'status=' + last);
+    }
+
+    // Users admin (ADMIN only)
+    let { status: uForbidden } = await jr(cTO, '/api/users');
+    ok(uForbidden === 403, 'non-admin cannot list users (403)');
+    let { body: uList } = await j(await fetch(BASE + '/api/users'));
+    ok(Array.isArray(uList.users) && uList.users.some((u) => u.username === 'opsmanager'), 'admin lists users incl. seeded approvers');
+
+    // cleanup the two test requests + spawned job card
+    await jr(COOKIE ? COOKIE : cTO, `/api/job-requests/${reqId}`, { method: 'DELETE', headers: { Cookie: COOKIE } });
+    await jr(COOKIE, `/api/job-requests/${oId}`, { method: 'DELETE', headers: { Cookie: COOKIE } });
+    if (spawnedJobCard) await j(await fetch(BASE + '/api/jobcards/' + spawnedJobCard, { method: 'DELETE' }));
+    ok(true, 'operations test cleanup done');
 
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

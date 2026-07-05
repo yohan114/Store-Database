@@ -15,6 +15,10 @@ const db = require('./db');
 
 const SESSION_COOKIE = 'ecms_sid';                 // Edward & Christie management system
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;    // 7 days
+// Set COOKIE_SECURE=true when serving over HTTPS so the session cookie is not
+// sent over plaintext (leave unset for a plain-HTTP LAN deployment).
+const COOKIE_SECURE = String(process.env.COOKIE_SECURE || '').toLowerCase() === 'true';
+const cookieFlags = (maxAge) => `HttpOnly; Path=/; SameSite=Lax;${COOKIE_SECURE ? ' Secure;' : ''} Max-Age=${maxAge}`;
 
 // Role identifiers (mirrors Job-Card-System/src/domain.js for future workflow use).
 const ROLES = {
@@ -75,7 +79,7 @@ function createSession(res, userId) {
         [sid, userId, new Date(now).toISOString(), new Date(now + SESSION_TTL_MS).toISOString()]
     );
     res.setHeader('Set-Cookie',
-        `${SESSION_COOKIE}=${sid}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+        `${SESSION_COOKIE}=${sid}; ${cookieFlags(Math.floor(SESSION_TTL_MS / 1000))}`);
     return sid;
 }
 
@@ -84,7 +88,7 @@ function destroySession(req, res) {
     if (sid) {
         try { db.run('DELETE FROM sessions WHERE sid=?', [sid]); } catch (_) {}
     }
-    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`);
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; ${cookieFlags(0)}`);
 }
 
 function safeRoles(raw) {
@@ -153,13 +157,17 @@ function requireRole(...roles) {
 function ensureSeedUser() {
     const row = db.get('SELECT COUNT(*) AS c FROM users');
     if (row && row.c > 0) return;
-    const { salt, hash } = hashPassword('admin123');
+    // Configurable via SEED_ADMIN_PASSWORD; keeps a documented default so a fresh
+    // install / test run can log in, but mustChangePassword forces a reset.
+    const seedPass = process.env.SEED_ADMIN_PASSWORD || 'admin123';
+    const { salt, hash } = hashPassword(seedPass);
     db.run(
         `INSERT INTO users (username, name, designation, email, roles, passwordHash, passwordSalt, active, mustChangePassword, createdAt)
          VALUES (?,?,?,?,?,?,?,?,?,?)`,
         ['admin', 'Administrator', 'System Administrator', '', JSON.stringify(['ADMIN']), hash, salt, 1, 1, new Date().toISOString()]
     );
-    console.log('  Seeded default login  →  username: admin   password: admin123   (change on first login)');
+    const shown = process.env.SEED_ADMIN_PASSWORD ? '(from SEED_ADMIN_PASSWORD)' : `password: ${seedPass}`;
+    console.log(`  Seeded default login  →  username: admin   ${shown}   (change on first login)`);
 }
 
 module.exports = {

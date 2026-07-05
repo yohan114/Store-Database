@@ -13,3 +13,10 @@ temp/
 .vscode/
 .gemini/
 *.tmp
+mail.config.json
+
+# Runtime database + redundant dumps must never be committed (contains password
+# hashes + live session tokens). Build from tracker_data.json via `npm run migrate`.
+inventory.db
+inventory.accdb
+test_output.json

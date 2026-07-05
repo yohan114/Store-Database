@@ -11,24 +11,34 @@
  */
 
 const db = require('./db');
-const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const costing = require('./costing');
+const config = require('./config');
+const round2 = costing.round2;
 
-// Canonical values are 'Head Office Purchase' / 'Local Purchase'; the older
-// spellings stay in the lists so rows written by legacy clients still classify.
-const HEAD_OFFICE = ['head office purchase', 'direct purchase', 'head office', 'pre-ordered'];
-const LOCAL = ['local purchase', 'local store'];
+// Source taxonomy comes from costing.js (the single source of truth) so the
+// dashboard, the item endpoints and the SQL can never disagree (finding 9).
+const HEAD_OFFICE = costing.HEAD_OFFICE;
+const LOCAL = costing.LOCAL;
 
-const monthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
-const yearStart = () => `${new Date().getFullYear()}-01-01`;
-const localISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const today = () => localISO(new Date());
-const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return localISO(d); };
+// Calendar date in the business timezone, shifted by `offsetDays`, as YYYY-MM-DD.
+// Computed in config.BUSINESS_TZ so day boundaries match the day-only data even
+// when the server runs in UTC (review finding: timezone).
+function businessISO(offsetDays = 0) {
+    const todayStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: config.BUSINESS_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());                       // 'YYYY-MM-DD' in the business zone
+    if (!offsetDays) return todayStr;
+    const d = new Date(todayStr + 'T12:00:00Z'); // noon UTC avoids DST/offset edges
+    d.setUTCDate(d.getUTCDate() + offsetDays);
+    return d.toISOString().slice(0, 10);
+}
+const monthStart = () => `${businessISO().slice(0, 7)}-01`;
+const yearStart = () => `${businessISO().slice(0, 4)}-01-01`;
+const today = () => businessISO(0);
+const yesterday = () => businessISO(-1);
 
 // SQL CASE that classifies a receipt's purchaseSource into an origin bucket.
-const ORIGIN_CASE = `CASE
-    WHEN LOWER(TRIM(r.purchaseSource)) IN (${HEAD_OFFICE.map((v) => `'${v}'`).join(',')}) THEN 'headOffice'
-    WHEN LOWER(TRIM(r.purchaseSource)) IN (${LOCAL.map((v) => `'${v}'`).join(',')}) THEN 'local'
-    ELSE 'other' END`;
+const ORIGIN_CASE = costing.originCaseSql('r.purchaseSource');
 
 function receiptWhere(f) {
     const where = ["r.transactionType='Receive'", 'r.unitPrice IS NOT NULL'];
@@ -61,7 +71,7 @@ function splitByOrigin(f) {
     return out;
 }
 
-function dailySplit(f, limit = 60) {
+function dailySplit(f, limit = config.DASHBOARD_DAILY_LIMIT) {
     const w = receiptWhere(f);
     const rows = db.all(
         `SELECT r.deliveryDateISO AS day, ${ORIGIN_CASE} AS origin, SUM(r.qty*r.unitPrice) AS val
@@ -79,7 +89,7 @@ function dailySplit(f, limit = 60) {
 }
 
 // Month-by-month expense split for the last `limit` months (newest first).
-function monthlySplit(f, limit = 12) {
+function monthlySplit(f, limit = config.DASHBOARD_MONTHLY_LIMIT) {
     const w = receiptWhere(f);
     const rows = db.all(
         `SELECT SUBSTR(r.deliveryDateISO,1,7) AS month, ${ORIGIN_CASE} AS origin, SUM(r.qty*r.unitPrice) AS val
@@ -97,7 +107,7 @@ function monthlySplit(f, limit = 12) {
 }
 
 // Requests not yet fully delivered, split by where they were requested from.
-function pendingItems(f, limit = 100) {
+function pendingItems(f, limit = config.DASHBOARD_PENDING_LIMIT) {
     const where = [];
     const params = [];
     if (f.category) { where.push('i.category = ?'); params.push(f.category); }
@@ -122,7 +132,7 @@ function pendingItems(f, limit = 100) {
     return out;
 }
 
-function supplierSpend(f, limit = 12) {
+function supplierSpend(f, limit = config.DASHBOARD_SUPPLIER_LIMIT) {
     const w = receiptWhere(f);
     const rows = db.all(
         `SELECT COALESCE(NULLIF(TRIM(r.supplierName),''),'Unspecified') AS supplier, COALESCE(SUM(r.qty*r.unitPrice),0) AS spend
@@ -136,15 +146,32 @@ function jobKpis() {
     const counts = { OPEN: 0, IN_PROGRESS: 0, ON_HOLD: 0, COMPLETED: 0, CLOSED: 0 };
     let total = 0;
     db.all('SELECT status, COUNT(*) AS c FROM jobcards GROUP BY status').forEach((r) => { counts[r.status] = r.c; total += r.c; });
-    const labour = round2((db.get('SELECT COALESCE(SUM(labourCost),0) AS s FROM jobcards') || {}).s);
-    const parts = round2((db.get(
-        `SELECT COALESCE(SUM(r.qty*r.unitPrice),0) AS s FROM receipts r JOIN items i ON i.id=r.itemId
-         WHERE r.transactionType='Receive' AND r.unitPrice IS NOT NULL AND i.jobCardId IS NOT NULL`) || {}).s);
+    // Per-job rollup (received parts + priced issues), then the single costing
+    // rule summed across all jobs — so the org-wide total reconciles with the
+    // per-job totals and includes issues + recordedCost (findings 7 & 8).
+    const rows = db.all(
+        `SELECT j.id, j.labourCost, j.recordedCost,
+                COALESCE(p.c,0) AS receivedPartsCost, COALESCE(s.c,0) AS issuesCost
+         FROM jobcards j
+         LEFT JOIN (SELECT i.jobCardId AS jid, ${costing.RECEIVED_PARTS_SUM} AS c
+                    FROM items i JOIN receipts r ON r.itemId=i.id GROUP BY i.jobCardId) p ON p.jid=j.id
+         LEFT JOIN (SELECT s.jobCardId AS jid, ${costing.ISSUES_SUM} AS c
+                    FROM issues s GROUP BY s.jobCardId) s ON s.jid=j.id`);
+    let labour = 0, parts = 0, issues = 0, recorded = 0, grand = 0;
+    rows.forEach((r) => {
+        labour += Number(r.labourCost) || 0;
+        parts += Number(r.receivedPartsCost) || 0;
+        issues += Number(r.issuesCost) || 0;
+        recorded += Number(r.recordedCost) || 0;   // shown as a labelled column
+        grand += costing.jobTotal(r);
+    });
     return {
         open: counts.OPEN, inProgress: counts.IN_PROGRESS, onHold: counts.ON_HOLD,
         completed: counts.COMPLETED, closed: counts.CLOSED, total,
         active: counts.OPEN + counts.IN_PROGRESS + counts.ON_HOLD,
-        labourCost: labour, partsCost: parts, totalCost: round2(labour + parts),
+        labourCost: round2(labour), partsCost: round2(parts + issues),
+        receivedPartsCost: round2(parts), issuesCost: round2(issues),
+        recordedCost: round2(recorded), totalCost: round2(grand),
     };
 }
 

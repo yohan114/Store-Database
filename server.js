@@ -19,18 +19,51 @@ const dbApi = require('./db');
 const { toISO, nowISO } = dbApi;
 const { classify, CATEGORIES } = require('./categorize');
 const auth = require('./auth');
+const costing = require('./costing');
+const config = require('./config');
 const jobcards = require('./jobcards');
 const programme = require('./programme');
 const dashboard = require('./dashboard');
+const jobrequests = require('./jobrequests');
+const notifications = require('./notifications');
+const users = require('./users');
 
 dbApi.init();
 auth.ensureSeedUser();
+users.ensureSeedApprovers();
 programme.ensureSeedMechanics();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(express.json({ limit: '100mb' }));
+
+// ---- Response gzip (zero-dependency) --------------------------------------
+// The whole-dataset /api/items JSON is ~2.9 MB uncompressed; gzip drops it
+// ~10× on the wire (review finding 10/perf). Compression is async so it never
+// blocks the event loop, and only kicks in for bodies over ~1 KB when the
+// client advertises gzip. Static files keep their own (browser-cached) path.
+const zlib = require('zlib');
+app.use((req, res, next) => {
+    if (!/\bgzip\b/.test(req.headers['accept-encoding'] || '')) return next();
+    const rawSend = res.send.bind(res);
+    res.send = (body) => {
+        try {
+            if (!res.getHeader('Content-Encoding') && (Buffer.isBuffer(body) || typeof body === 'string') && Buffer.byteLength(body) > 1024) {
+                res.setHeader('Vary', 'Accept-Encoding');
+                zlib.gzip(body, (err, gz) => {
+                    if (err) return rawSend(body);
+                    res.setHeader('Content-Encoding', 'gzip');
+                    res.removeHeader('Content-Length');
+                    rawSend(gz);
+                });
+                return res;
+            }
+        } catch (_) { /* fall through to uncompressed */ }
+        return rawSend(body);
+    };
+    next();
+});
 
 // Resolve the logged-in user (if any) for every request from its session cookie.
 app.use(auth.attachUser);
@@ -47,14 +80,36 @@ app.get('/login', (req, res) => {
     res.sendFile(path.join(__dirname, 'login.html'));
 });
 
+// --- Login brute-force throttle (in-memory, per IP+username) ---------------
+const LOGIN_WINDOW_MS = config.LOGIN_WINDOW_MS;   // rolling window
+const LOGIN_MAX_FAILS = config.LOGIN_MAX_FAILS;   // fails before lockout
+const loginFails = new Map();             // key -> { count, until }
+function loginKey(req, username) { return `${req.ip || req.socket.remoteAddress || '?'}|${username}`; }
+function loginBlocked(key) { const e = loginFails.get(key); return e && e.until && e.until > Date.now(); }
+function noteLoginFail(key) {
+    const now = Date.now();
+    const e = loginFails.get(key) || { count: 0, until: 0 };
+    e.count = (e.until && e.until > now ? e.count : 0) + 1;   // reset count after a lapsed window
+    if (e.count >= LOGIN_MAX_FAILS) { e.until = now + LOGIN_WINDOW_MS; e.count = 0; }
+    else { e.until = now + LOGIN_WINDOW_MS; }
+    loginFails.set(key, e);
+}
+
 app.post('/api/login', (req, res) => {
     const username = String((req.body && req.body.username) || '').trim().toLowerCase();
     const password = String((req.body && req.body.password) || '');
     if (!username || !password) return res.status(400).json({ error: 'Username and password are required.' });
+    const key = loginKey(req, username);
+    if (loginBlocked(key)) {
+        console.warn(`[AUTH] login locked out for ${key}`);
+        return res.status(429).json({ error: 'Too many failed attempts. Please wait a few minutes and try again.' });
+    }
     const user = dbApi.get('SELECT * FROM users WHERE LOWER(username)=? AND active=1', [username]);
     if (!user || !auth.verifyPassword(password, user.passwordSalt, user.passwordHash)) {
+        noteLoginFail(key);
         return res.status(401).json({ error: 'Invalid username or password.' });
     }
+    loginFails.delete(key);   // clear on success
     auth.createSession(res, user.id);
     res.json({ success: true, user: auth.publicUser(user) });
 });
@@ -84,11 +139,153 @@ app.post('/api/account/password', auth.requireApiAuth, (req, res) => {
     res.json({ success: true });
 });
 
+// ---- Health check (public) — for a supervisor / uptime probe --------------
+// Cheap liveness + a trivial DB read; returns 503 if the database is unreachable.
+app.get('/api/health', (req, res) => {
+    try {
+        dbApi.get('SELECT 1 AS ok');
+        res.json({ status: 'ok', engine: dbApi.ENGINE, uptimeSeconds: Math.round(process.uptime()) });
+    } catch (e) {
+        res.status(503).json({ status: 'error', error: 'database unavailable' });
+    }
+});
+
+// Read-only KPI summary for the E&C Master Portal. Token-authed via the
+// x-portal-token header and mounted BEFORE the session gate so the portal can
+// read it server-to-server without a login. Reuses dashboard.build() so the
+// numbers always match the in-app dashboard. Never mutates.
+app.get('/api/portal/summary', (req, res) => {
+    const token = req.get('x-portal-token');
+    const expected = process.env.WORKSHOP_PORTAL_TOKEN || process.env.PORTAL_TOKEN;
+    if (!expected || !token || token !== expected) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const d = dashboard.build();
+    const pendingJr = (dbApi.get(
+        "SELECT COUNT(*) AS c FROM job_requests WHERE status IN ('PENDING_TM','PENDING_OM')"
+    ) || {}).c || 0;
+    const rs = (n) => 'Rs ' + Math.round(Number(n) || 0).toLocaleString('en-LK');
+    res.json({
+        system: 'workshop',
+        generatedAt: new Date().toISOString(),
+        kpis: [
+            { label: 'Spend this month', value: rs(d.spend.mtd), tone: 'neutral', href: '/item_tracker.html#dashboard' },
+            { label: 'Pending MRN lines', value: d.pending.counts.total, tone: d.pending.counts.total > 0 ? 'warn' : 'good', href: '/item_tracker.html#tracker' },
+            { label: 'Active job cards', value: d.jobs.active, tone: 'neutral', href: '/item_tracker.html#jobcards' },
+            { label: 'Pending approvals', value: pendingJr, tone: pendingJr > 0 ? 'warn' : 'good', href: '/item_tracker.html#operations' },
+        ],
+    });
+});
+
+// Read-only entity list for the Master Portal's master-data spine (M4).
+// Machines come from two sources: E&C-coded rows (ecdNo on jobcards/job_requests,
+// which auto-match) and free-text vehicleMachinery strings (the messy tail, which
+// land in the portal's unmapped queue). Token-authed; mounted before the gate.
+app.get('/api/portal/entities', (req, res) => {
+    const token = req.get('x-portal-token');
+    const expected = process.env.WORKSHOP_PORTAL_TOKEN || process.env.PORTAL_TOKEN;
+    if (!expected || !token || token !== expected) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const norm = (s) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+    // E&C-coded machines (auto-matchable by code)
+    const ecRows = dbApi.all(
+        `SELECT ecdNo, vehicleMachinery FROM jobcards WHERE TRIM(COALESCE(ecdNo,'')) != ''
+         UNION ALL
+         SELECT ecdNo, vehicleMachinery FROM job_requests WHERE TRIM(COALESCE(ecdNo,'')) != ''`
+    );
+    const byCode = new Map();
+    for (const r of ecRows) {
+        const code = norm(r.ecdNo);
+        if (code && !byCode.has(code)) byCode.set(code, (r.vehicleMachinery || '').trim() || code);
+    }
+
+    // Free-text vehicle names (no reliable code)
+    const vehRows = dbApi.all(
+        `SELECT DISTINCT TRIM(vehicleMachinery) AS v FROM (
+            SELECT vehicleMachinery FROM items WHERE TRIM(COALESCE(vehicleMachinery,'')) != ''
+            UNION SELECT vehicleMachinery FROM issues WHERE TRIM(COALESCE(vehicleMachinery,'')) != ''
+            UNION SELECT vehicleMachinery FROM jobcards WHERE TRIM(COALESCE(vehicleMachinery,'')) != ''
+            UNION SELECT vehicleMachinery FROM job_requests WHERE TRIM(COALESCE(vehicleMachinery,'')) != ''
+         ) WHERE v != '' ORDER BY v`
+    );
+
+    const machines = [];
+    for (const [code, label] of byCode) machines.push({ localId: 'ec:' + code, code, label });
+    for (const r of vehRows) machines.push({ localId: 'veh:' + r.v, code: '', label: r.v });
+
+    const siteRows = dbApi.all(
+        `SELECT DISTINCT TRIM(p) AS p FROM (
+            SELECT projectName AS p FROM jobcards WHERE TRIM(COALESCE(projectName,'')) != ''
+            UNION SELECT projectName AS p FROM job_requests WHERE TRIM(COALESCE(projectName,'')) != ''
+            UNION SELECT site AS p FROM job_requests WHERE TRIM(COALESCE(site,'')) != ''
+         ) WHERE p != '' ORDER BY p`
+    );
+    const sites = siteRows.map((r) => ({ localId: r.p, name: r.p }));
+
+    res.json({ system: 'workshop', generatedAt: new Date().toISOString(), machines, sites });
+});
+
+// Read-only month-scoped job-cost feed for the Master Portal's profit engine
+// (M5): each job card's labour and parts, attributed to a machine (ecdNo E&C
+// code) and project. Money returned in LKR cents. Token-authed.
+app.get('/api/portal/costs', (req, res) => {
+    const token = req.get('x-portal-token');
+    const expected = process.env.WORKSHOP_PORTAL_TOKEN || process.env.PORTAL_TOKEN;
+    if (!expected || !token || token !== expected) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const month = String(req.query.month || '');
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+        return res.status(400).json({ error: 'month=YYYY-MM required' });
+    }
+    const start = `${month}-01`;
+    const [y, mo] = month.split('-').map(Number);
+    const end = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, '0')}-01`;
+    const norm = (s) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+    const rows = dbApi.all(
+        `SELECT j.id, j.ecdNo, j.projectName, j.dateISO, j.labourCost,
+                COALESCE(p.c,0) AS partsCost, COALESCE(s.c,0) AS issuesCost
+         FROM jobcards j
+         LEFT JOIN (SELECT i.jobCardId AS jid, ${costing.RECEIVED_PARTS_SUM} AS c
+                    FROM items i JOIN receipts r ON r.itemId=i.id GROUP BY i.jobCardId) p ON p.jid=j.id
+         LEFT JOIN (SELECT s.jobCardId AS jid, ${costing.ISSUES_SUM} AS c
+                    FROM issues s GROUP BY s.jobCardId) s ON s.jid=j.id
+         WHERE COALESCE(j.dateISO,'') != '' AND j.dateISO >= ? AND j.dateISO < ?`,
+        [start, end]
+    );
+
+    const costs = [];
+    for (const j of rows) {
+        const code = norm(j.ecdNo) || null;
+        const site = (j.projectName || '').trim() || null;
+        const labour = Number(j.labourCost) || 0;
+        const parts = (Number(j.partsCost) || 0) + (Number(j.issuesCost) || 0);
+        if (labour > 0) costs.push({ sourceRef: `job-labour:${j.id}`, machineCode: code, siteRef: site, category: 'labour', amountCents: Math.round(labour * 100), occurredAt: j.dateISO });
+        if (parts > 0) costs.push({ sourceRef: `job-parts:${j.id}`, machineCode: code, siteRef: site, category: 'parts', amountCents: Math.round(parts * 100), occurredAt: j.dateISO });
+    }
+    res.json({ system: 'workshop', month, costs, income: [] });
+});
+
 // ---- Gate everything else behind authentication ---------------------------
 app.use('/api', auth.requireApiAuth);
 app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res) => {
     if (req.path === '/') return res.redirect('/item_tracker.html');
     res.sendFile(path.join(__dirname, 'item_tracker.html'));
+});
+// Compiled client scripts (source in src/client/*.ts, built by `npm run
+// build:client`). The app bundle sits behind the login like the page itself;
+// the login script must be public because it runs on the sign-in screen.
+app.get('/js/app.js', auth.requirePageAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'js', 'app.js'));
+});
+app.get('/js/operations.js', auth.requirePageAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'js', 'operations.js'));
+});
+app.get('/js/login.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'js', 'login.js'));
 });
 // No blanket static serving: it exposed inventory.db, backups/ and the raw
 // data files to anyone on the network without a login. The app is fully
@@ -99,21 +296,104 @@ app.get('/api/dashboard', (req, res) => {
     res.json(dashboard.build(req.query));
 });
 
+// ===========================================================================
+// Operations — job requests, notifications, users
+// ===========================================================================
+const svcErr = (res, out) => res.status(out.status || 500).json({ error: out.error });
+
+// Error taxonomy: throw AppError(status, message) for an *expected* failure whose
+// message is safe to show the client (400/403/404/409/429). Anything else is an
+// unexpected bug — the centralized handler (bottom of file) returns a generic 500
+// and logs the real detail instead of leaking it (review: error handling).
+class AppError extends Error {
+    constructor(status, message) { super(message); this.status = status; this.expose = true; }
+}
+
+app.get('/api/job-requests', (req, res) => {
+    try { res.json(jobrequests.list(req.query, req.user)); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/job-requests/meta', (req, res) => {
+    res.json({
+        statuses: jobrequests.STATUSES, statusLabels: jobrequests.STATUS_LABELS,
+        canCreate: jobrequests.canCreate(req.user), roleLabels: auth.ROLE_LABELS,
+        directory: users.directory(),
+        // standingCc intentionally omitted — it is ADMIN-only and served from
+        // the gated /api/settings/standing-cc endpoint instead.
+    });
+});
+app.post('/api/job-requests', (req, res) => {
+    try { const out = jobrequests.create(req.body || {}, req.user); if (out.error) return svcErr(res, out); res.json(out); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.get('/api/job-requests/:id', (req, res) => {
+    const r = jobrequests.get(parseInt(req.params.id)); if (!r) return res.status(404).json({ error: 'Not found' }); res.json(r);
+});
+app.put('/api/job-requests/:id', (req, res) => {
+    try { const out = jobrequests.update(parseInt(req.params.id), req.body || {}, req.user); if (out.error) return svcErr(res, out); res.json(out); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/job-requests/:id/action', (req, res) => {
+    try { const out = jobrequests.transition(parseInt(req.params.id), (req.body || {}).action, req.body || {}, req.user); if (out.error) return svcErr(res, out); res.json(out); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.delete('/api/job-requests/:id', (req, res) => {
+    try { const out = jobrequests.remove(parseInt(req.params.id), req.user); if (out.error) return svcErr(res, out); res.json(out); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Notifications (current user's)
+app.get('/api/notifications', (req, res) => {
+    res.json({ notifications: notifications.listFor(req.user.id), unread: notifications.unreadCount(req.user.id) });
+});
+app.post('/api/notifications/read-all', (req, res) => { notifications.markAllRead(req.user.id); res.json({ success: true }); });
+app.post('/api/notifications/:id/read', (req, res) => { notifications.markRead(parseInt(req.params.id), req.user.id); res.json({ success: true }); });
+
+// Users admin (ADMIN only)
+app.get('/api/users', auth.requireRole('ADMIN'), (req, res) => res.json({ users: users.list() }));
+app.post('/api/users', auth.requireRole('ADMIN'), (req, res) => {
+    const out = users.create(req.body || {}); if (out.error) return svcErr(res, out); res.json(out);
+});
+app.put('/api/users/:id', auth.requireRole('ADMIN'), (req, res) => {
+    const out = users.update(parseInt(req.params.id), req.body || {}); if (out.error) return svcErr(res, out); res.json(out);
+});
+app.post('/api/users/:id/reset-password', auth.requireRole('ADMIN'), (req, res) => {
+    const out = users.resetPassword(parseInt(req.params.id), req.body || {}); if (out.error) return svcErr(res, out); res.json(out);
+});
+
+// Standing CC list for outsourced e-mails (ADMIN)
+app.get('/api/settings/standing-cc', auth.requireRole('ADMIN'), (req, res) => res.json({ standingCc: (dbApi.get(`SELECT value FROM app_settings WHERE key='standingCc'`) || {}).value || '' }));
+app.post('/api/settings/standing-cc', auth.requireRole('ADMIN'), (req, res) => {
+    const v = String((req.body || {}).standingCc || '').trim();
+    dbApi.run(`INSERT INTO app_settings (key,value) VALUES ('standingCc',?) ON CONFLICT(key) DO UPDATE SET value=?`, [v, v]);
+    res.json({ success: true, standingCc: v });
+});
+
+// Outbox (e-mail log) — ADMIN only (contains vendor communications).
+app.get('/api/outbox', auth.requireRole('ADMIN'), (req, res) => res.json({ outbox: dbApi.all('SELECT * FROM outbox ORDER BY id DESC LIMIT 200') }));
+
 // ---- Lightweight change signature for client polling ------------------------
 // The UI polls this tiny endpoint instead of re-downloading the whole dataset;
 // it only refetches when `version` changes. Receipt writes bump the parent
 // item's updatedAt so pricing edits are visible in the signature too.
 app.get('/api/summary', (req, res) => {
     try {
+        // One scan per table (count + max id + max updatedAt together) instead of
+        // two — halves the poll cost (review finding 13). count catches deletes,
+        // maxId catches inserts, maxUpdatedAt catches in-place edits.
+        const withUpdated = new Set(['items', 'issues', 'batteries', 'material_transfers', 'jobcards', 'daily_programme']);
         const parts = [];
         for (const t of ['items', 'receipts', 'issues', 'batteries', 'material_transfers', 'jobcards', 'daily_programme']) {
-            const r = dbApi.get(`SELECT COUNT(*) AS n, COALESCE(MAX(id),0) AS m FROM ${t}`);
-            parts.push(`${r.n}:${r.m}`);
+            const cols = withUpdated.has(t)
+                ? `COUNT(*) AS n, COALESCE(MAX(id),0) AS m, COALESCE(MAX(updatedAt),'') AS u`
+                : `COUNT(*) AS n, COALESCE(MAX(id),0) AS m, '' AS u`;
+            const r = dbApi.get(`SELECT ${cols} FROM ${t}`);
+            parts.push(`${r.n}:${r.m}:${r.u}`);
         }
-        for (const t of ['items', 'issues', 'batteries', 'material_transfers', 'jobcards', 'daily_programme']) {
-            parts.push((dbApi.get(`SELECT COALESCE(MAX(updatedAt),'') AS u FROM ${t}`) || {}).u || '');
-        }
-        res.json({ version: parts.join('|') });
+        // Fold in the caller's unread-notification count so the client can drive
+        // the bell from this one poll instead of a second /api/notifications hit.
+        const unread = req.user ? notifications.unreadCount(req.user.id) : 0;
+        res.json({ version: parts.join('|'), unread });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -139,11 +419,11 @@ app.post('/api/jobcards/auto-link-mrns', auth.requireRole('ADMIN'), (req, res) =
     dbApi.transaction(() => {
         for (const it of rows) {
             const m = jobcards.findMatch(it.vehicleMachinery, it.reqDateISO);
-            if (m) { setItemJob(it.id, m.id); linked++; }
+            if (m) { setItemJob(it.id, m.id, 'EXACT'); linked++; }
         }
         for (const is of issues) {
             const m = jobcards.findMatch(is.vehicleMachinery, is.issueDateISO);
-            if (m) { setIssueJob(is.id, m.id); issuesLinked++; }
+            if (m) { setIssueJob(is.id, m.id, 'EXACT'); issuesLinked++; }
         }
     });
     res.json({ success: true, scanned: rows.length + issues.length, linked, issuesLinked });
@@ -178,8 +458,8 @@ app.post('/api/jobcards/:id/auto-link', (req, res) => {
     const issues = dbApi.all("SELECT id, vehicleMachinery FROM issues WHERE jobCardId IS NULL AND issueDateISO != '' AND issueDateISO >= ? AND issueDateISO <= ? AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", [w.lo, w.hi, like]).filter((r) => jobcards.vehSet(r.vehicleMachinery).includes(w.vn));
     let linked = 0, issuesLinked = 0;
     dbApi.transaction(() => {
-        for (const it of rows) { setItemJob(it.id, job.id); linked++; }
-        for (const is of issues) { setIssueJob(is.id, job.id); issuesLinked++; }
+        for (const it of rows) { setItemJob(it.id, job.id, 'EXACT'); linked++; }
+        for (const is of issues) { setIssueJob(is.id, job.id, 'EXACT'); issuesLinked++; }
     });
     res.json({ success: true, linked, issuesLinked });
 });
@@ -263,18 +543,21 @@ app.put('/api/mechanics/:id', (req, res) => {
 });
 
 // ---- Link MRNs (items) to job cards (parts cost) ---------------------------
-function setItemJob(itemId, jobCardId) {
-    if (!jobCardId) { dbApi.run('UPDATE items SET jobCardId=NULL, jobNo=NULL WHERE id=?', [itemId]); return null; }
+// method: how the link was made — 'MANUAL' | 'EXACT' (in-window) | 'NEAR'
+// (nearest guess) | 'CATCHALL' (per-vehicle bucket). gap: day distance, if known.
+// Recorded so low-confidence links are auditable/reversible (review finding 16).
+function setItemJob(itemId, jobCardId, method = 'MANUAL', gap = null) {
+    if (!jobCardId) { dbApi.run('UPDATE items SET jobCardId=NULL, jobNo=NULL, linkMethod=NULL, linkGap=NULL WHERE id=?', [itemId]); return null; }
     const j = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobCardId]);
     if (!j) return null;
-    dbApi.run('UPDATE items SET jobCardId=?, jobNo=? WHERE id=?', [jobCardId, j.jobNo, itemId]);
+    dbApi.run('UPDATE items SET jobCardId=?, jobNo=?, linkMethod=?, linkGap=? WHERE id=?', [jobCardId, j.jobNo, method, gap, itemId]);
     return j.jobNo;
 }
-function setIssueJob(issueId, jobCardId) {
-    if (!jobCardId) { dbApi.run('UPDATE issues SET jobCardId=NULL, jobNo=NULL WHERE id=?', [issueId]); return null; }
+function setIssueJob(issueId, jobCardId, method = 'MANUAL', gap = null) {
+    if (!jobCardId) { dbApi.run('UPDATE issues SET jobCardId=NULL, jobNo=NULL, linkMethod=NULL, linkGap=NULL WHERE id=?', [issueId]); return null; }
     const j = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobCardId]);
     if (!j) return null;
-    dbApi.run('UPDATE issues SET jobCardId=?, jobNo=? WHERE id=?', [jobCardId, j.jobNo, issueId]);
+    dbApi.run('UPDATE issues SET jobCardId=?, jobNo=?, linkMethod=?, linkGap=? WHERE id=?', [jobCardId, j.jobNo, method, gap, issueId]);
     return j.jobNo;
 }
 // Link every item line of an MRN number to a job card.
@@ -315,21 +598,9 @@ const ITEM_SORTS = {
     gap: '(reqQty - recQty)',
 };
 
-// Canonical source values. Requests are sourced 'Local' or 'Head Office';
-// deliveries are 'Local Purchase' or 'Head Office Purchase'. Legacy spellings
-// are folded into the canonical ones so old clients/imports can't fragment.
-function normRequestSource(v) {
-    const t = String(v || '').trim().toLowerCase();
-    if (t === 'local') return 'Local';
-    if (t === 'head office' || t === 'headoffice') return 'Head Office';
-    return null;
-}
-function canonicalPurchaseSource(v) {
-    const t = String(v || '').trim().toLowerCase();
-    if (['local store', 'local purchase', 'local'].includes(t)) return 'Local Purchase';
-    if (['direct purchase', 'head office', 'pre-ordered', 'head office purchase', 'headoffice purchase'].includes(t)) return 'Head Office Purchase';
-    return s(v);
-}
+// Canonical source values come from costing.js (the single source of truth) so
+// requests/deliveries/dashboard/export can never fragment (finding 9).
+const { normRequestSource, canonicalPurchaseSource } = costing;
 
 // Build the item-level WHERE clause shared by list + count queries.
 function buildItemWhere(q) {
@@ -382,18 +653,28 @@ app.get('/api/items', (req, res) => {
         const page = parseInt(req.query.page) || null;
         const limit = parseInt(req.query.limit) || null;
 
-        // The computed columns used by both filter tabs and sorting.
+        // The computed columns used by both filter tabs and sorting. One
+        // GROUP-BY aggregate over receipts replaces four correlated subqueries
+        // per row (review finding 10) — a single pass instead of 4×N lookups.
         const computed = `
             i.*,
-            COALESCE((SELECT SUM(qty) FROM receipts r WHERE r.itemId=i.id),0) AS recQty,
-            (SELECT COUNT(*) FROM receipts r WHERE r.itemId=i.id) AS recCount,
-            (SELECT MAX(deliveryDateISO) FROM receipts r WHERE r.itemId=i.id) AS recDateISO,
-            CASE WHEN EXISTS(SELECT 1 FROM receipts r WHERE r.itemId=i.id AND (r.unitPrice IS NULL OR r.unitPrice=0)) THEN 1 ELSE 0 END AS hasUnpriced
+            COALESCE(rc.recQty,0) AS recQty,
+            COALESCE(rc.recCount,0) AS recCount,
+            rc.recDateISO AS recDateISO,
+            COALESCE(rc.hasUnpriced,0) AS hasUnpriced
         `;
+        const RECEIPT_AGG = `LEFT JOIN (
+            SELECT itemId,
+                   COALESCE(SUM(qty),0) AS recQty,
+                   COUNT(*) AS recCount,
+                   MAX(deliveryDateISO) AS recDateISO,
+                   MAX(CASE WHEN unitPrice IS NULL OR unitPrice=0 THEN 1 ELSE 0 END) AS hasUnpriced
+            FROM receipts GROUP BY itemId
+        ) rc ON rc.itemId = i.id`;
 
         // Unpaginated: return the whole dataset (used by dashboard/fleet/dropdowns).
         if (!page || !limit) {
-            const items = dbApi.all(`SELECT ${computed} FROM items i ORDER BY i.reqDateISO DESC, i.id DESC`);
+            const items = dbApi.all(`SELECT ${computed} FROM items i ${RECEIPT_AGG} ORDER BY i.reqDateISO DESC, i.id DESC`);
             return res.json(attachReceipts(items));
         }
 
@@ -405,7 +686,7 @@ app.get('/api/items', (req, res) => {
         const order = (req.query.order || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
         const skip = (page - 1) * limit;
 
-        const baseCte = `WITH base AS (SELECT ${computed} FROM items i ${clause})`;
+        const baseCte = `WITH base AS (SELECT ${computed} FROM items i ${RECEIPT_AGG} ${clause})`;
         const total = dbApi.get(`${baseCte} SELECT COUNT(*) AS c FROM base ${outerWhere}`, params).c;
         const items = dbApi.all(
             `${baseCte} SELECT * FROM base ${outerWhere} ORDER BY ${sortKey} ${order}, id DESC LIMIT ? OFFSET ?`,
@@ -436,10 +717,10 @@ app.post('/api/items', (req, res) => {
         );
         // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
         let linkedJobNo = null;
-        if (b.jobCardId) linkedJobNo = setItemJob(r.lastInsertRowid, b.jobCardId);
+        if (b.jobCardId) linkedJobNo = setItemJob(r.lastInsertRowid, b.jobCardId, 'MANUAL');
         else {
             const m = jobcards.findMatch(s(b.vehicleMachinery), toISO(b.reqDate));
-            if (m) linkedJobNo = setItemJob(r.lastInsertRowid, m.id);
+            if (m) linkedJobNo = setItemJob(r.lastInsertRowid, m.id, 'EXACT');
         }
         res.json({ success: true, id: r.lastInsertRowid, category, jobNo: linkedJobNo });
     } catch (e) {
@@ -468,14 +749,10 @@ app.put('/api/items/:id', (req, res) => {
     }
 });
 
-// Middleware to verify deletion password
-const verifyDeletePassword = (req, res, next) => {
-    const password = req.headers['x-delete-password'] || req.query.password;
-    if (password !== 'E&CWorkshop') {
-        return res.status(403).json({ error: 'Unauthorized: Incorrect delete password.' });
-    }
-    next();
-};
+// Destructive deletes require the ADMIN role (real authorization). This
+// replaces the old shared 'delete password' — a constant that shipped in the
+// client bundle and provided no real protection.
+const verifyDeletePassword = auth.requireRole('ADMIN');
 
 // 4. DELETE /api/items/:id  (cascades receipts)
 app.delete('/api/items/:id', verifyDeletePassword, (req, res) => {
@@ -587,6 +864,29 @@ app.get('/api/issues', (req, res) => {
     }
 });
 
+// Suggested unit price for an issued item: the most recent priced 'Receive'
+// receipt of the same item name (case-insensitive). Null when the item was
+// never priced. Used to auto-fill the issue price so issues roll into job cost.
+function suggestIssuePrice(itemName) {
+    const name = String(itemName || '').trim().toLowerCase();
+    if (!name) return null;
+    const row = dbApi.get(
+        `SELECT r.unitPrice AS p FROM receipts r JOIN items i ON i.id = r.itemId
+         WHERE r.transactionType='Receive' AND r.unitPrice IS NOT NULL
+           AND LOWER(TRIM(i.itemName)) = ?
+         ORDER BY r.deliveryDateISO DESC, r.id DESC LIMIT 1`, [name]);
+    return row ? row.p : null;
+}
+
+// GET /api/issues/suggest-price?itemName=... -> { unitPrice }
+app.get('/api/issues/suggest-price', (req, res) => {
+    try {
+        res.json({ unitPrice: suggestIssuePrice(req.query.itemName) });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // How much of a linked request line is still available to issue: receipts
 // minus issues drawn from it (linked by itemId, or legacy rows matching the
 // same MRN + name). Only issues that pick a request line (itemId) are hard-
@@ -621,21 +921,24 @@ app.post('/api/issues', (req, res) => {
         const category = b.category && String(b.category).trim() ? String(b.category).trim() : classify(itemName, itemDesc);
         const itemId = b.itemId ? parseInt(b.itemId) : null;
         const qty = Number(b.qty) || 0;
+        // Explicit price wins; otherwise auto-suggest from the item's priced deliveries.
+        const unitPrice = Object.prototype.hasOwnProperty.call(b, 'unitPrice')
+            ? numOrNull(b.unitPrice) : suggestIssuePrice(itemName);
         const stockErr = checkIssueStock({ itemId, qty, excludeIssueId: null });
         if (stockErr) return res.status(400).json({ error: stockErr });
         const now = nowISO();
         const r = dbApi.run(
-            `INSERT INTO issues (issueDate, issueDateISO, vehicleMachinery, itemName, itemDesc, qty, category, issuedTo, issuedBy, mrnNum, purchaseSource, notes, itemId, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO issues (issueDate, issueDateISO, vehicleMachinery, itemName, itemDesc, qty, category, issuedTo, issuedBy, mrnNum, purchaseSource, notes, itemId, unitPrice, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [s(b.issueDate), toISO(b.issueDate), s(b.vehicleMachinery), itemName, itemDesc, qty, category,
-             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), itemId, now, now]
+             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), itemId, unitPrice, now, now]
         );
         // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
         let issJobNo = null;
-        if (b.jobCardId) issJobNo = setIssueJob(r.lastInsertRowid, b.jobCardId);
+        if (b.jobCardId) issJobNo = setIssueJob(r.lastInsertRowid, b.jobCardId, 'MANUAL');
         else {
             const m = jobcards.findMatch(s(b.vehicleMachinery), toISO(b.issueDate));
-            if (m) issJobNo = setIssueJob(r.lastInsertRowid, m.id);
+            if (m) issJobNo = setIssueJob(r.lastInsertRowid, m.id, 'EXACT');
         }
         res.json({ success: true, id: r.lastInsertRowid, category, jobNo: issJobNo });
     } catch (e) {
@@ -650,18 +953,25 @@ app.put('/api/issues/:id', (req, res) => {
         const itemName = s(b.itemName);
         const itemDesc = s(b.itemDesc);
         const category = b.category && String(b.category).trim() ? String(b.category).trim() : classify(itemName, itemDesc);
-        const existing = dbApi.get(`SELECT itemId FROM issues WHERE id=?`, [id]);
+        const existing = dbApi.get(`SELECT itemId, unitPrice FROM issues WHERE id=?`, [id]);
         if (!existing) return res.status(404).json({ error: 'Issue not found' });
         const itemId = Object.prototype.hasOwnProperty.call(b, 'itemId')
             ? (b.itemId ? parseInt(b.itemId) : null)
             : existing.itemId;
         const qty = Number(b.qty) || 0;
+        // Price precedence: an explicit unitPrice in the body wins (including a
+        // deliberate clear to null); else re-derive only when resuggestPrice is
+        // asked for; otherwise keep the stored price so an unrelated edit can't
+        // silently clobber a hand-entered one (review: latent issue-price asymmetry).
+        const unitPrice = Object.prototype.hasOwnProperty.call(b, 'unitPrice')
+            ? numOrNull(b.unitPrice)
+            : (b.resuggestPrice ? suggestIssuePrice(itemName) : (existing.unitPrice != null ? existing.unitPrice : suggestIssuePrice(itemName)));
         const stockErr = checkIssueStock({ itemId, qty, excludeIssueId: id });
         if (stockErr) return res.status(400).json({ error: stockErr });
         dbApi.run(
-            `UPDATE issues SET issueDate=?, issueDateISO=?, vehicleMachinery=?, itemName=?, itemDesc=?, qty=?, category=?, issuedTo=?, issuedBy=?, mrnNum=?, purchaseSource=?, notes=?, itemId=?, updatedAt=? WHERE id=?`,
+            `UPDATE issues SET issueDate=?, issueDateISO=?, vehicleMachinery=?, itemName=?, itemDesc=?, qty=?, category=?, issuedTo=?, issuedBy=?, mrnNum=?, purchaseSource=?, notes=?, itemId=?, unitPrice=?, updatedAt=? WHERE id=?`,
             [s(b.issueDate), toISO(b.issueDate), s(b.vehicleMachinery), itemName, itemDesc, qty, category,
-             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), itemId, nowISO(), id]
+             s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), itemId, unitPrice, nowISO(), id]
         );
         res.json({ success: true, category });
     } catch (e) {
@@ -1295,15 +1605,23 @@ app.get('/api/export/excel', (req, res) => {
         }
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(transfersSheet), 'Material Transfers');
 
-        // --- Job Cards sheet (with parts + labour + total cost) ---
+        // --- Job Cards sheet (labour + parts + issues + recorded + total) ---
+        // Same rollup as list()/get()/jobKpis so the export reconciles with the
+        // dashboard and the per-job cockpit (findings 6-8).
         const jobRows = dbApi.all(`SELECT j.*,
-            COALESCE((SELECT SUM(CASE WHEN r.transactionType='Receive' AND r.unitPrice IS NOT NULL THEN r.qty*r.unitPrice ELSE 0 END)
-                      FROM receipts r JOIN items i ON i.id=r.itemId WHERE i.jobCardId=j.id),0) AS partsCost
-            FROM jobcards j ORDER BY j.id DESC`);
-        const jobSheet = [['Job No', 'Type', 'Status', 'Date', 'Vehicle/Machinery', 'Project', 'Repair Type', 'Driver', 'Labour (Rs.)', 'Parts (Rs.)', 'Total Job Cost (Rs.)', 'Details']];
+            COALESCE(p.c,0) AS receivedPartsCost, COALESCE(s.c,0) AS issuesCost
+            FROM jobcards j
+            LEFT JOIN (SELECT i.jobCardId AS jid, ${costing.RECEIVED_PARTS_SUM} AS c
+                       FROM items i JOIN receipts r ON r.itemId=i.id GROUP BY i.jobCardId) p ON p.jid=j.id
+            LEFT JOIN (SELECT s.jobCardId AS jid, ${costing.ISSUES_SUM} AS c
+                       FROM issues s GROUP BY s.jobCardId) s ON s.jid=j.id
+            ORDER BY j.id DESC`);
+        const jobSheet = [['Job No', 'Type', 'Status', 'Date', 'Vehicle/Machinery', 'Project', 'Repair Type', 'Driver', 'Labour (Rs.)', 'Received Parts (Rs.)', 'Issued Parts (Rs.)', 'Recorded Service (Rs.)', 'Total Job Cost (Rs.)', 'Details']];
         for (const jc of jobRows) {
-            const parts = Math.round((jc.partsCost || 0) * 100) / 100;
-            jobSheet.push([jc.jobNo || '', jc.type || '', jc.status || '', jc.dateISO || jc.date || '', jc.vehicleMachinery || '', jc.projectName || '', jc.repairType || '', jc.driverName || '', jc.labourCost || 0, parts, Math.round(((jc.labourCost || 0) + parts) * 100) / 100, jc.details || '']);
+            const received = costing.round2(jc.receivedPartsCost || 0);
+            const issued = costing.round2(jc.issuesCost || 0);
+            const recorded = (jc.recordedCost != null && jc.recordedCost > 0) ? costing.round2(jc.recordedCost) : 0;
+            jobSheet.push([jc.jobNo || '', jc.type || '', jc.status || '', jc.dateISO || jc.date || '', jc.vehicleMachinery || '', jc.projectName || '', jc.repairType || '', jc.driverName || '', jc.labourCost || 0, received, issued, recorded, costing.jobTotal(jc), jc.details || '']);
         }
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(jobSheet), 'Job Cards');
 
@@ -1391,29 +1709,67 @@ app.post('/api/import/pdf', async (req, res) => {
     }
 });
 
-// --- start + lightweight single-file backups -------------------------------
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Inventory Monitor running at http://localhost:${PORT}/item_tracker.html  (engine: ${dbApi.ENGINE})`);
-    const nets = os.networkInterfaces();
-    for (const name in nets) for (const iface of nets[name]) {
-        if (iface.family === 'IPv4' && !iface.internal) console.log(`  Network: http://${iface.address}:${PORT}`);
-    }
+// Centralized error handler — the safety net for any throw that escapes a
+// route (Express routes sync throws here). Expected AppErrors show their
+// message + status; everything else is a logged 500 with a generic body so
+// internal detail / stack traces never reach the client.
+app.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    const status = (err && err.status) || 500;
+    if (status >= 500) console.error(`[ERR] ${req.method} ${req.originalUrl}:`, (err && err.stack) || err);
+    res.status(status).json({ error: (err && err.expose && err.message) ? err.message : 'Internal server error.' });
 });
 
+// --- start + lightweight single-file backups -------------------------------
+// Standalone: `node server.js` listens on its own port. Embedded (the unified
+// E&C server requires this file as a module): no listen here — the host server
+// mounts `app` and owns the socket. Backups below run in both modes.
+if (require.main === module) {
+    app.listen(PORT, '0.0.0.0', () => {
+        console.log(`Inventory Monitor running at http://localhost:${PORT}/item_tracker.html  (engine: ${dbApi.ENGINE})`);
+        const nets = os.networkInterfaces();
+        for (const name in nets) for (const iface of nets[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) console.log(`  Network: http://${iface.address}:${PORT}`);
+        }
+    });
+}
+
+module.exports = app;
+
+// --- Automatic backups: async (non-blocking) + tiered retention ------------
+// db.backup() is a consistent online copy that never freezes the event loop the
+// way copyFileSync did (review finding 19). Retention keeps recent granularity
+// without unbounded growth: every backup for 24 h, then one per day for 30 days.
+// Restore: stop the server, copy the chosen backups/inventory_backup_*.db over
+// inventory.db (delete any -wal/-shm sidecars first), restart. See docs/BACKUP_RESTORE.md.
 const BACKUP_DIR = path.join(__dirname, 'backups');
-const BACKUP_INTERVAL = 30 * 60 * 1000;
+const BACKUP_INTERVAL = config.BACKUP_INTERVAL_MS;
+const DAY_MS = 24 * 60 * 60 * 1000;
+function pruneBackups() {
+    const files = fs.readdirSync(BACKUP_DIR)
+        .filter((f) => f.startsWith('inventory_backup_') && f.endsWith('.db'))
+        .map((f) => ({ f, m: fs.statSync(path.join(BACKUP_DIR, f)).mtime.getTime() }))
+        .sort((a, b) => b.m - a.m);
+    const now = Date.now();
+    const keptDays = new Set();
+    for (const { f, m } of files) {
+        const age = now - m;
+        if (age <= config.BACKUP_KEEP_ALL_MS) continue;   // keep everything < 24 h old
+        if (age > config.BACKUP_KEEP_DAILY_DAYS * DAY_MS) { try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch (_) {} continue; }
+        const dayKey = Math.floor(m / DAY_MS);            // one per calendar day beyond 24 h
+        if (keptDays.has(dayKey)) { try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch (_) {} }
+        else keptDays.add(dayKey);
+    }
+}
 function runAutomaticBackup() {
     try {
         if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
-        try { dbApi.exec('PRAGMA wal_checkpoint(TRUNCATE);'); } catch (_) {}
+        if (!fs.existsSync(dbApi.DB_FILE)) return;
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
         const dest = path.join(BACKUP_DIR, `inventory_backup_${ts}.db`);
-        if (fs.existsSync(dbApi.DB_FILE)) {
-            fs.copyFileSync(dbApi.DB_FILE, dest);
-            const files = fs.readdirSync(BACKUP_DIR).filter(f => f.startsWith('inventory_backup_') && f.endsWith('.db'))
-                .map(f => ({ f, m: fs.statSync(path.join(BACKUP_DIR, f)).mtime })).sort((a, b) => b.m - a.m);
-            files.slice(48).forEach(({ f }) => { try { fs.unlinkSync(path.join(BACKUP_DIR, f)); } catch (_) {} });
-        }
+        Promise.resolve(dbApi.backup(dest))
+            .then(() => { try { pruneBackups(); } catch (_) {} })
+            .catch((e) => console.error('[BACKUP] failed:', e.message));
     } catch (e) {
         console.error('[BACKUP] failed:', e.message);
     }

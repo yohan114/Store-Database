@@ -16,6 +16,23 @@ npm run migrate        # builds inventory.db from the store data (safe to re-run
 npm start              # serves http://localhost:5000/item_tracker.html
 ```
 
+### TypeScript client
+
+The browser application is written in **TypeScript** under `src/client/`
+(`app.ts` — the main app, `login.ts` — the sign-in page, `globals.d.ts` — the
+domain types: `Item`, `ReceiptRec`, `IssueRec`, `BatteryRec`, `TransferRec`,
+`JobCard`, `QueueAction`). It compiles to plain classic scripts in `js/`
+(committed, so `npm start` needs no build step):
+
+```bash
+npm run build:client   # compile src/client -> js/ (run after editing client code)
+npm run typecheck      # type-check only, no emit
+```
+
+Never edit `js/*.js` directly — they are build output. The HTML files contain
+only markup plus two tiny bootstrap snippets (error collector, Tailwind
+config); all application logic lives in the TypeScript sources.
+
 On Windows you can double-click **`start_server.bat`** (runs all three steps).
 
 - First run seeds a default admin — **username `admin`, password `admin123`** —
@@ -48,6 +65,29 @@ npm run import:issues                    # dry run
 npm run import:issues -- --commit        # write into inventory.db
 ```
 This repo already ships the imported data in `inventory.db`.
+
+### Completing the per-job cost (materials + issues + labour)
+Four idempotent backfill tools wire every historical requested material, issued
+item and daily labour line into its job card so each job shows a true total
+cost = **received parts + issued items + labour**. Each runs as a dry-run
+report by default; add `--commit` to write (or run them all with
+`npm run backfill:jobcost`):
+
+```bash
+npm run price:issues        # derive an issued item's price from its priced deliveries
+npm run import:service       # import the Job_Record "service" sheet (recorded cost)
+npm run link:jobs            # attach unlinked items/issues to their vehicle's job
+npm run reattribute:daily    # move daily labour off DW- catch-alls onto real jobs
+```
+
+- `link:jobs` attributes each material/issue in three tiers — exact date-window
+  match, nearest same-vehicle job within `--max-gap` days (default 60), else a
+  per-vehicle `DW-<vehicle>` catch-all (`--catchall`).
+- Issued items now carry an editable **unit price** (auto-suggested from the
+  item's last priced delivery) and roll into job cost; a `recordedCost` column
+  holds flat service-log / C-job totals for reference (never double-counted).
+- Labour keeps the workshop rule — **each mechanic on a line is costed at the
+  full hours × their rate** (e.g. `Saman, Ruwan – 10h` → Saman×10 + Ruwan×10).
 
 ## What's inside
 

@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+
+      - name: Build client
+        run: npm run build:client
+
+      # The compiled js/ bundle is committed; fail if it drifts from src/client/*.ts
+      # so a .ts edit can never ship without its rebuild (review: stop committing
+      # js/ or CI-check it's in sync).
+      - name: Verify committed js/ is in sync with source
+        run: |
+          if ! git diff --exit-code -- js/; then
+            echo "::error::js/ is out of date — run 'npm run build:client' and commit the result."
+            exit 1
+          fi
+
+      - name: Unit tests (node:test)
+        run: npm run test:unit
+
+      # test_api boots the server against a disposable copy of the database, so
+      # build one from the committed tracker_data.json first.
+      - name: Build database fixture
+        run: npm run migrate
+
+      - name: API integration tests
+        run: npm run test:api

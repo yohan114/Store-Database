@@ -177,6 +177,56 @@ app.get('/api/portal/summary', (req, res) => {
     });
 });
 
+// Read-only entity list for the Master Portal's master-data spine (M4).
+// Machines come from two sources: E&C-coded rows (ecdNo on jobcards/job_requests,
+// which auto-match) and free-text vehicleMachinery strings (the messy tail, which
+// land in the portal's unmapped queue). Token-authed; mounted before the gate.
+app.get('/api/portal/entities', (req, res) => {
+    const token = req.get('x-portal-token');
+    const expected = process.env.PORTAL_TOKEN;
+    if (!expected || !token || token !== expected) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const norm = (s) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+    // E&C-coded machines (auto-matchable by code)
+    const ecRows = dbApi.all(
+        `SELECT ecdNo, vehicleMachinery FROM jobcards WHERE TRIM(COALESCE(ecdNo,'')) != ''
+         UNION ALL
+         SELECT ecdNo, vehicleMachinery FROM job_requests WHERE TRIM(COALESCE(ecdNo,'')) != ''`
+    );
+    const byCode = new Map();
+    for (const r of ecRows) {
+        const code = norm(r.ecdNo);
+        if (code && !byCode.has(code)) byCode.set(code, (r.vehicleMachinery || '').trim() || code);
+    }
+
+    // Free-text vehicle names (no reliable code)
+    const vehRows = dbApi.all(
+        `SELECT DISTINCT TRIM(vehicleMachinery) AS v FROM (
+            SELECT vehicleMachinery FROM items WHERE TRIM(COALESCE(vehicleMachinery,'')) != ''
+            UNION SELECT vehicleMachinery FROM issues WHERE TRIM(COALESCE(vehicleMachinery,'')) != ''
+            UNION SELECT vehicleMachinery FROM jobcards WHERE TRIM(COALESCE(vehicleMachinery,'')) != ''
+            UNION SELECT vehicleMachinery FROM job_requests WHERE TRIM(COALESCE(vehicleMachinery,'')) != ''
+         ) WHERE v != '' ORDER BY v`
+    );
+
+    const machines = [];
+    for (const [code, label] of byCode) machines.push({ localId: 'ec:' + code, code, label });
+    for (const r of vehRows) machines.push({ localId: 'veh:' + r.v, code: '', label: r.v });
+
+    const siteRows = dbApi.all(
+        `SELECT DISTINCT TRIM(p) AS p FROM (
+            SELECT projectName AS p FROM jobcards WHERE TRIM(COALESCE(projectName,'')) != ''
+            UNION SELECT projectName AS p FROM job_requests WHERE TRIM(COALESCE(projectName,'')) != ''
+            UNION SELECT site AS p FROM job_requests WHERE TRIM(COALESCE(site,'')) != ''
+         ) WHERE p != '' ORDER BY p`
+    );
+    const sites = siteRows.map((r) => ({ localId: r.p, name: r.p }));
+
+    res.json({ system: 'workshop', generatedAt: new Date().toISOString(), machines, sites });
+});
+
 // ---- Gate everything else behind authentication ---------------------------
 app.use('/api', auth.requireApiAuth);
 app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res) => {

@@ -242,6 +242,93 @@ function init() {
         CREATE INDEX IF NOT EXISTS idx_transfers_mtn ON material_transfers(mtnNum);
     `);
 
+    // ---- Auth: users + sessions (combined Workshop + Store system) ---------
+    exec(`
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            name TEXT,
+            designation TEXT,
+            email TEXT,
+            roles TEXT,                       -- JSON array e.g. '["ADMIN"]'
+            passwordHash TEXT,
+            passwordSalt TEXT,
+            active INTEGER DEFAULT 1,
+            mustChangePassword INTEGER DEFAULT 0,
+            createdAt TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS sessions (
+            sid TEXT PRIMARY KEY,
+            userId INTEGER,
+            createdAt TEXT,
+            expiresAt TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sessions_userId ON sessions(userId);
+    `);
+
+    // ---- Job Cards (parent) + audit trail ----------------------------------
+    exec(`
+        CREATE TABLE IF NOT EXISTS jobcards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jobNo TEXT,
+            type TEXT,                        -- INTERNAL | OUTSOURCED
+            status TEXT,                      -- OPEN | IN_PROGRESS | ON_HOLD | COMPLETED | CLOSED
+            date TEXT, dateISO TEXT,
+            projectName TEXT,
+            vehicleMachinery TEXT,
+            meter REAL,
+            repairType TEXT, repairTypeNote TEXT,
+            expectedDate TEXT, expectedDateISO TEXT,
+            driverName TEXT, contactNo TEXT, ecdNo TEXT,
+            details TEXT,
+            vendorName TEXT,
+            startedAt TEXT, completedAt TEXT, closedAt TEXT, holdReason TEXT,
+            labourCost REAL DEFAULT 0,        -- cached rollup of daily_programme rows
+            createdBy INTEGER, createdAt TEXT, updatedAt TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS job_audits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jobCardId INTEGER,
+            userId INTEGER, userName TEXT,
+            action TEXT, fromStatus TEXT, toStatus TEXT, note TEXT, at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_jobcards_status  ON jobcards(status);
+        CREATE INDEX IF NOT EXISTS idx_jobcards_vehicle ON jobcards(vehicleMachinery);
+        CREATE INDEX IF NOT EXISTS idx_jobcards_dateISO ON jobcards(dateISO);
+        CREATE INDEX IF NOT EXISTS idx_jobaudits_card   ON job_audits(jobCardId);
+    `);
+
+    // ---- Daily Programme (child of a job card) + mechanic rates ------------
+    exec(`
+        CREATE TABLE IF NOT EXISTS daily_programme (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jobCardId INTEGER NOT NULL,
+            entryDate TEXT, entryDateISO TEXT,
+            vehicleMachinery TEXT,
+            workDescription TEXT,
+            mechanics TEXT,                   -- comma-separated names
+            hours REAL DEFAULT 0,
+            outsideValue REAL DEFAULT 0,
+            remarks TEXT,
+            labourCost REAL DEFAULT 0,        -- computed from mechanics + hours + rates
+            createdBy INTEGER, createdAt TEXT, updatedAt TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS mechanics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            hourlyRate REAL,                  -- NULL/0 => excluded from labour cost
+            active INTEGER DEFAULT 1
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_dp_jobCard ON daily_programme(jobCardId);
+        CREATE INDEX IF NOT EXISTS idx_dp_dateISO ON daily_programme(entryDateISO);
+    `);
+
     // Lightweight migration: add the category column if upgrading an older DB.
     try {
         const cols = all(`PRAGMA table_info(items)`);
@@ -250,6 +337,17 @@ function init() {
             exec(`CREATE INDEX IF NOT EXISTS idx_items_category ON items(category);`);
         }
     } catch (e) { /* fresh DB already has it */ }
+
+    // Migration: link MRNs (items) and issues to a job card (nullable, additive).
+    ['items', 'issues'].forEach((tbl) => {
+        try {
+            const cols = all(`PRAGMA table_info(${tbl})`);
+            if (!cols.some(c => c.name === 'jobCardId')) exec(`ALTER TABLE ${tbl} ADD COLUMN jobCardId INTEGER;`);
+            if (!cols.some(c => c.name === 'jobNo')) exec(`ALTER TABLE ${tbl} ADD COLUMN jobNo TEXT;`);
+        } catch (e) { /* fresh DB already has the columns */ }
+    });
+    try { exec(`CREATE INDEX IF NOT EXISTS idx_items_jobCardId ON items(jobCardId);`); } catch (e) {}
+    try { exec(`CREATE INDEX IF NOT EXISTS idx_issues_jobCardId ON issues(jobCardId);`); } catch (e) {}
     return db;
 }
 

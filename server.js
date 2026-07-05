@@ -18,21 +18,265 @@ const { PDFParse } = require('pdf-parse');
 const dbApi = require('./db');
 const { toISO, nowISO } = dbApi;
 const { classify, CATEGORIES } = require('./categorize');
+const auth = require('./auth');
+const jobcards = require('./jobcards');
+const programme = require('./programme');
+const dashboard = require('./dashboard');
 
 dbApi.init();
+auth.ensureSeedUser();
+programme.ensureSeedMechanics();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(express.json({ limit: '100mb' }));
 
+// Resolve the logged-in user (if any) for every request from its session cookie.
+app.use(auth.attachUser);
+
 // Disable caching for API routes to ensure network clients always get fresh data
 app.use('/api', (req, res, next) => {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     next();
 });
+
+// ---- Authentication routes (public) ---------------------------------------
+app.get('/login', (req, res) => {
+    if (req.user) return res.redirect('/item_tracker.html');
+    res.sendFile(path.join(__dirname, 'login.html'));
+});
+
+app.post('/api/login', (req, res) => {
+    const username = String((req.body && req.body.username) || '').trim().toLowerCase();
+    const password = String((req.body && req.body.password) || '');
+    if (!username || !password) return res.status(400).json({ error: 'Username and password are required.' });
+    const user = dbApi.get('SELECT * FROM users WHERE LOWER(username)=? AND active=1', [username]);
+    if (!user || !auth.verifyPassword(password, user.passwordSalt, user.passwordHash)) {
+        return res.status(401).json({ error: 'Invalid username or password.' });
+    }
+    auth.createSession(res, user.id);
+    res.json({ success: true, user: auth.publicUser(user) });
+});
+
+app.post('/api/logout', (req, res) => {
+    auth.destroySession(req, res);
+    res.json({ success: true });
+});
+
+app.get('/api/me', (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Not authenticated.' });
+    res.json({ user: auth.publicUser(req.user) });
+});
+
+// Change own password (forced first-login change + account screen).
+app.post('/api/account/password', auth.requireApiAuth, (req, res) => {
+    const newPassword = String((req.body && req.body.newPassword) || '');
+    const currentPassword = String((req.body && req.body.currentPassword) || '');
+    if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+    if (!req.user.mustChangePassword) {
+        if (!auth.verifyPassword(currentPassword, req.user.passwordSalt, req.user.passwordHash)) {
+            return res.status(403).json({ error: 'Current password is incorrect.' });
+        }
+    }
+    const { salt, hash } = auth.hashPassword(newPassword);
+    dbApi.run('UPDATE users SET passwordHash=?, passwordSalt=?, mustChangePassword=0 WHERE id=?', [hash, salt, req.user.id]);
+    res.json({ success: true });
+});
+
+// ---- Gate everything else behind authentication ---------------------------
+app.use('/api', auth.requireApiAuth);
+app.get(['/', '/item_tracker.html'], auth.requirePageAuth, (req, res, next) => {
+    if (req.path === '/') return res.redirect('/item_tracker.html');
+    next();
+});
+
 app.use(express.static(__dirname));
-app.get('/', (req, res) => res.redirect('/item_tracker.html'));
+
+// ---- Unified dashboard analytics -------------------------------------------
+app.get('/api/dashboard', (req, res) => {
+    res.json(dashboard.build(req.query));
+});
+
+// ---- Job Cards -------------------------------------------------------------
+app.get('/api/jobcards', (req, res) => {
+    res.json(jobcards.list(req.query));
+});
+app.post('/api/jobcards', (req, res) => {
+    const jc = jobcards.create(req.body || {}, req.user);
+    res.json({ success: true, jobcard: jc });
+});
+// Suggest the job a vehicle + date would auto-link to (live form helper).
+app.get('/api/jobcards/match', (req, res) => {
+    res.json({ match: jobcards.findMatch(req.query.vehicle, req.query.dateISO) || null });
+});
+// Bulk: auto-link every still-unlinked MRN to its matching job (vehicle + window).
+app.post('/api/jobcards/auto-link-mrns', auth.requireRole('ADMIN'), (req, res) => {
+    const rows = dbApi.all("SELECT id, vehicleMachinery, reqDateISO FROM items WHERE jobCardId IS NULL AND vehicleMachinery != '' AND reqDateISO != ''");
+    const issues = dbApi.all("SELECT id, vehicleMachinery, issueDateISO FROM issues WHERE jobCardId IS NULL AND vehicleMachinery != '' AND issueDateISO != ''");
+    let linked = 0, issuesLinked = 0;
+    dbApi.transaction(() => {
+        for (const it of rows) {
+            const m = jobcards.findMatch(it.vehicleMachinery, it.reqDateISO);
+            if (m) { setItemJob(it.id, m.id); linked++; }
+        }
+        for (const is of issues) {
+            const m = jobcards.findMatch(is.vehicleMachinery, is.issueDateISO);
+            if (m) { setIssueJob(is.id, m.id); issuesLinked++; }
+        }
+    });
+    res.json({ success: true, scanned: rows.length + issues.length, linked, issuesLinked });
+});
+app.get('/api/jobcards/:id', (req, res) => {
+    const jc = jobcards.get(req.params.id);
+    if (!jc) return res.status(404).json({ error: 'Job card not found.' });
+    res.json(jc);
+});
+app.put('/api/jobcards/:id', (req, res) => {
+    const jc = jobcards.update(req.params.id, req.body || {}, req.user);
+    if (!jc) return res.status(404).json({ error: 'Job card not found.' });
+    res.json({ success: true, jobcard: jc });
+});
+app.post('/api/jobcards/:id/status', (req, res) => {
+    const r = jobcards.setStatus(req.params.id, (req.body || {}).status, (req.body || {}).note, req.user);
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json({ success: true, jobcard: r.jobcard });
+});
+app.delete('/api/jobcards/:id', auth.requireRole('ADMIN'), (req, res) => {
+    res.json(jobcards.remove(req.params.id));
+});
+// Pull in EVERY unlinked MRN + issue for this job's vehicle dated within its
+// window [start-2 … end+2] (not just best-match). Only claims unlinked rows.
+app.post('/api/jobcards/:id/auto-link', (req, res) => {
+    const job = dbApi.get('SELECT id, vehicleMachinery, dateISO, expectedDateISO FROM jobcards WHERE id=?', [req.params.id]);
+    if (!job) return res.status(404).json({ error: 'Job card not found.' });
+    const w = jobcards.jobWindow(job);
+    if (!w || !w.vn) return res.json({ success: true, linked: 0, issuesLinked: 0 });
+    const like = '%' + w.vn + '%';
+    const rows = dbApi.all("SELECT id, vehicleMachinery FROM items WHERE jobCardId IS NULL AND reqDateISO != '' AND reqDateISO >= ? AND reqDateISO <= ? AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", [w.lo, w.hi, like]).filter((r) => jobcards.vehSet(r.vehicleMachinery).includes(w.vn));
+    const issues = dbApi.all("SELECT id, vehicleMachinery FROM issues WHERE jobCardId IS NULL AND issueDateISO != '' AND issueDateISO >= ? AND issueDateISO <= ? AND REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?", [w.lo, w.hi, like]).filter((r) => jobcards.vehSet(r.vehicleMachinery).includes(w.vn));
+    let linked = 0, issuesLinked = 0;
+    dbApi.transaction(() => {
+        for (const it of rows) { setItemJob(it.id, job.id); linked++; }
+        for (const is of issues) { setIssueJob(is.id, job.id); issuesLinked++; }
+    });
+    res.json({ success: true, linked, issuesLinked });
+});
+// Distinct unlinked MRNs whose vehicle matches this job — feeds the "Link MRN"
+// dropdown in the job modal. Vehicle match is the shared normVeh/vehSet rule
+// (any plate the job shares with the MRN), one row per mrnNum.
+app.get('/api/jobcards/:id/linkable-mrns', (req, res) => {
+    const job = dbApi.get('SELECT vehicleMachinery FROM jobcards WHERE id=?', [req.params.id]);
+    if (!job) return res.status(404).json({ error: 'Job card not found.' });
+    const jobVehs = jobcards.vehSet(job.vehicleMachinery);
+    if (!jobVehs.length) return res.json({ mrns: [] });
+    const likes = jobVehs.map(() => "REPLACE(UPPER(vehicleMachinery),' ','') LIKE ?").join(' OR ');
+    const params = jobVehs.map((v) => '%' + v + '%');
+    const rows = dbApi.all(
+        "SELECT mrnNum, itemName, vehicleMachinery FROM items WHERE jobCardId IS NULL AND TRIM(COALESCE(mrnNum,'')) != '' AND (" + likes + ") ORDER BY mrnNum",
+        params
+    );
+    const seen = new Set(); const mrns = [];
+    for (const r of rows) {
+        if (seen.has(r.mrnNum)) continue;
+        if (!jobcards.vehSet(r.vehicleMachinery).some((v) => jobVehs.includes(v))) continue;
+        seen.add(r.mrnNum);
+        mrns.push({ mrnNum: r.mrnNum, itemName: r.itemName || '' });
+    }
+    res.json({ mrns });
+});
+
+// ---- Daily Programme (child of a job card) + mechanic rates ----------------
+app.get('/api/jobcards/:id/programme', (req, res) => {
+    res.json({ programme: programme.listForJob(req.params.id) });
+});
+app.post('/api/jobcards/:id/programme', (req, res) => {
+    const r = programme.create(req.params.id, req.body || {}, req.user);
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json({ success: true, entry: r.entry });
+});
+app.put('/api/programme/:id', (req, res) => {
+    const r = programme.update(req.params.id, req.body || {}, req.user);
+    if (r.error) return res.status(404).json({ error: r.error });
+    res.json({ success: true, entry: r.entry });
+});
+app.delete('/api/programme/:id', (req, res) => {
+    res.json(programme.remove(req.params.id));
+});
+// Add a daily entry by vehicle + date — auto-resolve the job (else per-vehicle catch-all).
+app.post('/api/programme/auto', (req, res) => {
+    const b = req.body || {};
+    const vehicle = b.vehicle || b.vehicleMachinery;
+    const dateISO = dbApi.toISO(b.entryDate) || new Date().toISOString().slice(0, 10);
+    let jobId = b.jobCardId ? parseInt(b.jobCardId) : null;
+    let matched = !!jobId;
+    if (!jobId) {
+        const m = jobcards.findMatch(vehicle, dateISO);
+        if (m) { jobId = m.id; matched = true; }
+        else jobId = jobcards.getOrCreateCatchAll(vehicle);
+    }
+    if (!jobId) return res.status(400).json({ error: 'A vehicle (or job) is required.' });
+    const r = programme.create(jobId, Object.assign({}, b, { vehicleMachinery: vehicle }), req.user);
+    if (r.error) return res.status(400).json({ error: r.error });
+    const job = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobId]);
+    res.json({ success: true, entry: r.entry, jobCardId: jobId, jobNo: job ? job.jobNo : null, matched });
+});
+// "Today" view across all jobs.
+app.get('/api/programme', (req, res) => {
+    const dateISO = req.query.dateISO || new Date().toISOString().slice(0, 10);
+    res.json({ dateISO, programme: programme.listByDate(dateISO) });
+});
+// Mechanic rates admin.
+app.get('/api/mechanics', (req, res) => {
+    res.json({ mechanics: programme.mechanicsList() });
+});
+app.post('/api/mechanics', (req, res) => {
+    const r = programme.mechanicAdd(req.body || {});
+    if (r.error) return res.status(400).json({ error: r.error });
+    res.json({ success: true, mechanic: r.mechanic });
+});
+app.put('/api/mechanics/:id', (req, res) => {
+    const r = programme.mechanicUpdate(req.params.id, req.body || {});
+    if (r.error) return res.status(404).json({ error: r.error });
+    res.json({ success: true, mechanic: r.mechanic });
+});
+
+// ---- Link MRNs (items) to job cards (parts cost) ---------------------------
+function setItemJob(itemId, jobCardId) {
+    if (!jobCardId) { dbApi.run('UPDATE items SET jobCardId=NULL, jobNo=NULL WHERE id=?', [itemId]); return null; }
+    const j = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobCardId]);
+    if (!j) return null;
+    dbApi.run('UPDATE items SET jobCardId=?, jobNo=? WHERE id=?', [jobCardId, j.jobNo, itemId]);
+    return j.jobNo;
+}
+function setIssueJob(issueId, jobCardId) {
+    if (!jobCardId) { dbApi.run('UPDATE issues SET jobCardId=NULL, jobNo=NULL WHERE id=?', [issueId]); return null; }
+    const j = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobCardId]);
+    if (!j) return null;
+    dbApi.run('UPDATE issues SET jobCardId=?, jobNo=? WHERE id=?', [jobCardId, j.jobNo, issueId]);
+    return j.jobNo;
+}
+// Link every item line of an MRN number to a job card.
+app.post('/api/jobcards/:id/link-mrn', (req, res) => {
+    const jobCardId = parseInt(req.params.id);
+    const job = dbApi.get('SELECT jobNo FROM jobcards WHERE id=?', [jobCardId]);
+    if (!job) return res.status(404).json({ error: 'Job card not found.' });
+    const mrnNum = String((req.body || {}).mrnNum || '').trim();
+    if (!mrnNum) return res.status(400).json({ error: 'MRN number is required.' });
+    const r = dbApi.run('UPDATE items SET jobCardId=?, jobNo=? WHERE mrnNum=?', [jobCardId, job.jobNo, mrnNum]);
+    if (!r.changes) return res.status(404).json({ error: 'No MRN found with that number.' });
+    res.json({ success: true, linked: r.changes });
+});
+// Link / unlink a single item line.
+app.post('/api/items/:id/link', (req, res) => {
+    const jobNo = setItemJob(parseInt(req.params.id), (req.body || {}).jobCardId || null);
+    res.json({ success: true, jobNo });
+});
+// Link / unlink a single issued item.
+app.post('/api/issues/:id/link', (req, res) => {
+    const jobNo = setIssueJob(parseInt(req.params.id), (req.body || {}).jobCardId || null);
+    res.json({ success: true, jobNo });
+});
 
 // --- helpers ----------------------------------------------------------------
 const s = (v) => (v === null || v === undefined) ? '' : String(v);
@@ -149,7 +393,14 @@ app.post('/api/items', (req, res) => {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [s(b.mrnNum), s(b.reqDate), toISO(b.reqDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.reqQty) || 0, category, now, now]
         );
-        res.json({ success: true, id: r.lastInsertRowid, category });
+        // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
+        let linkedJobNo = null;
+        if (b.jobCardId) linkedJobNo = setItemJob(r.lastInsertRowid, b.jobCardId);
+        else {
+            const m = jobcards.findMatch(s(b.vehicleMachinery), toISO(b.reqDate));
+            if (m) linkedJobNo = setItemJob(r.lastInsertRowid, m.id);
+        }
+        res.json({ success: true, id: r.lastInsertRowid, category, jobNo: linkedJobNo });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -169,6 +420,7 @@ app.put('/api/items/:id', (req, res) => {
             `UPDATE items SET mrnNum=?, reqDate=?, reqDateISO=?, vehicleMachinery=?, itemName=?, itemDesc=?, reqQty=?, category=?, updatedAt=? WHERE id=?`,
             [s(b.mrnNum), s(b.reqDate), toISO(b.reqDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.reqQty) || 0, category, nowISO(), id]
         );
+        if (b.jobCardId !== undefined) setItemJob(id, b.jobCardId || null);
         res.json({ success: true, category });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -302,7 +554,14 @@ app.post('/api/issues', (req, res) => {
             [s(b.issueDate), toISO(b.issueDate), s(b.vehicleMachinery), itemName, itemDesc, Number(b.qty) || 0, category,
              s(b.issuedTo), s(b.issuedBy), s(b.mrnNum), s(b.purchaseSource), s(b.notes), now, now]
         );
-        res.json({ success: true, id: r.lastInsertRowid, category });
+        // Link to a job: explicit pick wins; otherwise auto-match by vehicle + date window.
+        let issJobNo = null;
+        if (b.jobCardId) issJobNo = setIssueJob(r.lastInsertRowid, b.jobCardId);
+        else {
+            const m = jobcards.findMatch(s(b.vehicleMachinery), toISO(b.issueDate));
+            if (m) issJobNo = setIssueJob(r.lastInsertRowid, m.id);
+        }
+        res.json({ success: true, id: r.lastInsertRowid, category, jobNo: issJobNo });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -350,6 +609,21 @@ app.get('/api/vehicles', (req, res) => {
             SELECT DISTINCT TRIM(toLocation) AS v FROM material_transfers WHERE TRIM(COALESCE(toLocation,'')) != ''
             ORDER BY v COLLATE NOCASE`);
         res.json(rows.map(r => r.v));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Distinct item/consumable names across MRNs + issues — feeds the searchable
+// datalists in the job-card modal (item/part name, consumable name).
+app.get('/api/item-names', (req, res) => {
+    try {
+        const rows = dbApi.all(`
+            SELECT DISTINCT TRIM(itemName) AS n FROM items WHERE TRIM(COALESCE(itemName,'')) != ''
+            UNION
+            SELECT DISTINCT TRIM(itemName) AS n FROM issues WHERE TRIM(COALESCE(itemName,'')) != ''
+            ORDER BY n COLLATE NOCASE`);
+        res.json({ names: rows.map(r => r.n) });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -936,6 +1210,26 @@ app.get('/api/export/excel', (req, res) => {
             ]);
         }
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(transfersSheet), 'Material Transfers');
+
+        // --- Job Cards sheet (with parts + labour + total cost) ---
+        const jobRows = dbApi.all(`SELECT j.*,
+            COALESCE((SELECT SUM(CASE WHEN r.transactionType='Receive' AND r.unitPrice IS NOT NULL THEN r.qty*r.unitPrice ELSE 0 END)
+                      FROM receipts r JOIN items i ON i.id=r.itemId WHERE i.jobCardId=j.id),0) AS partsCost
+            FROM jobcards j ORDER BY j.id DESC`);
+        const jobSheet = [['Job No', 'Type', 'Status', 'Date', 'Vehicle/Machinery', 'Project', 'Repair Type', 'Driver', 'Labour (Rs.)', 'Parts (Rs.)', 'Total Job Cost (Rs.)', 'Details']];
+        for (const jc of jobRows) {
+            const parts = Math.round((jc.partsCost || 0) * 100) / 100;
+            jobSheet.push([jc.jobNo || '', jc.type || '', jc.status || '', jc.dateISO || jc.date || '', jc.vehicleMachinery || '', jc.projectName || '', jc.repairType || '', jc.driverName || '', jc.labourCost || 0, parts, Math.round(((jc.labourCost || 0) + parts) * 100) / 100, jc.details || '']);
+        }
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(jobSheet), 'Job Cards');
+
+        // --- Daily Programme sheet ---
+        const dpRows = dbApi.all(`SELECT dp.*, j.jobNo AS jobNo FROM daily_programme dp LEFT JOIN jobcards j ON j.id=dp.jobCardId ORDER BY dp.entryDateISO DESC, dp.id DESC`);
+        const dpSheet = [['Date', 'Job No', 'Vehicle/Machinery', 'Work Done', 'Mechanics', 'Hours', 'Labour (Rs.)', 'Outside Value (Rs.)', 'Remarks']];
+        for (const e of dpRows) {
+            dpSheet.push([e.entryDateISO || e.entryDate || '', e.jobNo || '', e.vehicleMachinery || '', e.workDescription || '', e.mechanics || '', e.hours || 0, e.labourCost || 0, e.outsideValue || 0, e.remarks || '']);
+        }
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dpSheet), 'Daily Programme');
 
         const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
         res.setHeader('Content-Disposition', 'attachment; filename="inventory_report.xlsx"');

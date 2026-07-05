@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in · Workshop & Stores</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: {
+                colors: { brand: {
+                    50:'#edfdf8',100:'#cff9ea',200:'#a0f0d4',300:'#67e2ba',400:'#32cc9e',
+                    500:'#12b389',600:'#0d906e',650:'#0b7c5e',700:'#0e7055',800:'#105945',850:'#0d4a39',900:'#114a3a',950:'#042b22'
+                }},
+                fontFamily: { sans: ['"Plus Jakarta Sans"','sans-serif'] }
+            }}
+        }
+    </script>
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .aurora { background:
+            radial-gradient(60rem 60rem at 10% -10%, rgba(18,179,137,.18), transparent 60%),
+            radial-gradient(50rem 50rem at 110% 10%, rgba(13,144,110,.16), transparent 55%),
+            radial-gradient(40rem 40rem at 50% 120%, rgba(50,204,158,.12), transparent 60%);
+        }
+        .glass { background: rgba(15,23,28,.55); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
+        .field:focus { outline: none; border-color:#12b389; box-shadow: 0 0 0 3px rgba(18,179,137,.18); }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 aurora flex items-center justify-center p-5">
+
+    <div class="w-full max-w-md">
+        <!-- Brand -->
+        <div class="flex items-center justify-center gap-3 mb-7">
+            <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand-400 to-brand-700 grid place-items-center shadow-lg shadow-brand-900/40">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 4a4 4 0 00-4 4v1H5a2 2 0 00-2 2v6a2 2 0 002 2h14a2 2 0 002-2v-6a2 2 0 00-2-2h-2V8a4 4 0 00-4-4h-2z"/></svg>
+            </div>
+            <div>
+                <div class="text-lg font-extrabold tracking-tight leading-none">Workshop &amp; Stores</div>
+                <div class="text-[11px] font-semibold text-brand-400 uppercase tracking-widest mt-0.5">Edward &amp; Christie</div>
+            </div>
+        </div>
+
+        <!-- Card -->
+        <div class="glass border border-white/10 rounded-3xl shadow-2xl shadow-black/40 p-7 sm:p-8">
+
+            <!-- Sign-in step -->
+            <div id="signinStep">
+                <h1 class="text-xl font-extrabold tracking-tight">Welcome back</h1>
+                <p class="text-sm text-slate-400 mt-1 mb-6">Sign in to the unified job-card &amp; stores system.</p>
+
+                <form id="loginForm" class="space-y-4">
+                    <div>
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Username</label>
+                        <input id="username" name="username" autocomplete="username" autofocus required
+                            class="field w-full px-4 py-3 rounded-xl bg-slate-900/70 border border-white/10 text-sm font-semibold placeholder-slate-500 transition"
+                            placeholder="admin">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Password</label>
+                        <input id="password" name="password" type="password" autocomplete="current-password" required
+                            class="field w-full px-4 py-3 rounded-xl bg-slate-900/70 border border-white/10 text-sm font-semibold placeholder-slate-500 transition"
+                            placeholder="••••••••">
+                    </div>
+                    <div id="loginError" class="hidden text-sm font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2"></div>
+                    <button id="loginBtn" type="submit"
+                        class="w-full py-3 rounded-xl bg-gradient-to-r from-brand-500 to-brand-700 hover:from-brand-400 hover:to-brand-600 text-white text-sm font-extrabold tracking-wide shadow-lg shadow-brand-900/40 transition disabled:opacity-60">
+                        Sign in
+                    </button>
+                </form>
+            </div>
+
+            <!-- Force-change-password step -->
+            <div id="changeStep" class="hidden">
+                <h1 class="text-xl font-extrabold tracking-tight">Set a new password</h1>
+                <p class="text-sm text-slate-400 mt-1 mb-6">For security, choose a new password before continuing.</p>
+                <form id="changeForm" class="space-y-4">
+                    <div>
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">New password</label>
+                        <input id="newPassword" type="password" autocomplete="new-password" required minlength="6"
+                            class="field w-full px-4 py-3 rounded-xl bg-slate-900/70 border border-white/10 text-sm font-semibold placeholder-slate-500 transition"
+                            placeholder="At least 6 characters">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Confirm password</label>
+                        <input id="confirmPassword" type="password" autocomplete="new-password" required minlength="6"
+                            class="field w-full px-4 py-3 rounded-xl bg-slate-900/70 border border-white/10 text-sm font-semibold placeholder-slate-500 transition"
+                            placeholder="Repeat new password">
+                    </div>
+                    <div id="changeError" class="hidden text-sm font-semibold text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2"></div>
+                    <button id="changeBtn" type="submit"
+                        class="w-full py-3 rounded-xl bg-gradient-to-r from-brand-500 to-brand-700 hover:from-brand-400 hover:to-brand-600 text-white text-sm font-extrabold tracking-wide shadow-lg shadow-brand-900/40 transition disabled:opacity-60">
+                        Save &amp; continue
+                    </button>
+                </form>
+            </div>
+
+        </div>
+        <p class="text-center text-[11px] text-slate-500 mt-5 font-medium">Vehicle &amp; Machinery Job Cards · Material Requisitions · Store Inventory</p>
+    </div>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const showErr = (el, msg) => { el.textContent = msg; el.classList.remove('hidden'); };
+        const hideErr = (el) => el.classList.add('hidden');
+
+        $('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideErr($('loginError'));
+            $('loginBtn').disabled = true;
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: $('username').value, password: $('password').value })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) { showErr($('loginError'), data.error || 'Sign in failed.'); $('loginBtn').disabled = false; return; }
+                if (data.user && data.user.mustChangePassword) {
+                    $('signinStep').classList.add('hidden');
+                    $('changeStep').classList.remove('hidden');
+                    $('newPassword').focus();
+                } else {
+                    window.location.href = '/item_tracker.html';
+                }
+            } catch (err) {
+                showErr($('loginError'), 'Network error — please try again.'); $('loginBtn').disabled = false;
+            }
+        });
+
+        $('changeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideErr($('changeError'));
+            if ($('newPassword').value !== $('confirmPassword').value) { showErr($('changeError'), 'Passwords do not match.'); return; }
+            $('changeBtn').disabled = true;
+            try {
+                const res = await fetch('/api/account/password', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ newPassword: $('newPassword').value })
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) { showErr($('changeError'), data.error || 'Could not update password.'); $('changeBtn').disabled = false; return; }
+                window.location.href = '/item_tracker.html';
+            } catch (err) {
+                showErr($('changeError'), 'Network error — please try again.'); $('changeBtn').disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

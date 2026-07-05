@@ -169,6 +169,24 @@
                         </svg>
                     </button>
 
+                    <!-- Current User + Sign out -->
+                    <div class="relative" id="userMenuContainer">
+                        <button onclick="toggleUserDropdown()" class="flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 bg-indigo-900/50 hover:bg-indigo-900/90 dark:bg-slate-800/50 dark:hover:bg-slate-800 rounded-2xl border border-indigo-900/80 dark:border-slate-700/80 transition duration-200" title="Account">
+                            <span id="userAvatar" class="w-7 h-7 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-700 text-white grid place-items-center text-[11px] font-extrabold">–</span>
+                            <span class="hidden sm:flex flex-col items-start leading-none">
+                                <span id="userName" class="text-xs font-bold text-white">…</span>
+                                <span id="userRole" class="text-[10px] font-semibold text-indigo-300 dark:text-slate-400 mt-0.5"></span>
+                            </span>
+                            <svg class="w-3.5 h-3.5 text-indigo-300 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+                        <div id="userDropdown" class="hidden absolute right-0 mt-2 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl z-50 overflow-hidden glass-panel">
+                            <button onclick="logout()" class="w-full text-left px-4 py-3 text-sm text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition flex items-center gap-2.5 font-semibold">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                                Sign out
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Dropdown Actions Menu -->
                     <div class="relative" id="actionsDropdownContainer">
                         <button onclick="toggleActionsDropdown()" class="px-4 py-2.5 bg-gradient-to-r from-indigo-900 to-indigo-850 dark:from-slate-800 dark:to-slate-750 text-indigo-100 hover:text-white dark:text-slate-200 font-semibold rounded-2xl transition-all duration-200 border border-indigo-800/60 dark:border-slate-700 outline-none flex items-center gap-2 text-sm shadow-sm" title="Database Actions">
@@ -220,6 +238,19 @@
                     <span class="flex items-center">
                         <svg class="sidebar-icon w-5 h-5 mr-3 text-slate-400 dark:text-slate-500 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4zM14 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2v-4z"></path></svg>
                         <span class="sidebar-text">Dashboard</span>
+                    </span>
+                </a>
+                <a href="#jobcards" id="nav-jobcards" class="sidebar-btn w-full flex items-center justify-between px-3.5 py-3 text-slate-655 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-semibold rounded-2xl transition-all duration-200 border border-transparent outline-none">
+                    <span class="flex items-center">
+                        <svg class="sidebar-icon w-5 h-5 mr-3 text-slate-400 dark:text-slate-500 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                        <span class="sidebar-text">Job Cards</span>
+                    </span>
+                    <span id="count-jobcards" class="sidebar-badge bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 py-0.5 px-3 rounded-full text-xs font-extrabold transition-all">0</span>
+                </a>
+                <a href="#programme" id="nav-programme" class="sidebar-btn w-full flex items-center justify-between px-3.5 py-3 text-slate-655 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-semibold rounded-2xl transition-all duration-200 border border-transparent outline-none">
+                    <span class="flex items-center">
+                        <svg class="sidebar-icon w-5 h-5 mr-3 text-slate-400 dark:text-slate-500 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        <span class="sidebar-text">Daily Programme</span>
                     </span>
                 </a>
                 <a href="#tracker" id="nav-tracker" class="sidebar-btn w-full flex items-center justify-between px-3.5 py-3 text-slate-655 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 font-semibold rounded-2xl transition-all duration-200 border border-transparent outline-none">
@@ -298,7 +329,339 @@
         <main class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-slate-50/50 dark:bg-slate-950/20 space-y-6">
         
             <!-- VIEW: Command Dashboard -->
+            <!-- ============================ JOB CARDS (list) ============================ -->
+            <section id="view-jobcards" class="route-view hidden space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Job Cards</h2>
+                        <p class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-1">Vehicle &amp; machinery repair / service jobs and their daily programme.</p>
+                    </div>
+                    <div class="flex items-center gap-2 self-start sm:self-auto">
+                        <button onclick="autoLinkAllMrns(this)" class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 transition" title="Link unlinked MRNs and issued items to jobs by vehicle + date">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                            Auto-link
+                        </button>
+                        <a href="#jobcard-entry" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-400 hover:to-indigo-600 text-white text-sm font-bold shadow-sm transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path></svg>
+                            New Job Card
+                        </a>
+                    </div>
+                </div>
+
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm p-4 sm:p-5">
+                    <div class="flex flex-col md:flex-row gap-3 md:items-center">
+                        <div class="relative flex-grow">
+                            <svg class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            <input id="jcSearch" oninput="renderJobCards()" placeholder="Search job no, vehicle, project, driver…" class="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <select id="jcStatusFilter" onchange="renderJobCards()" class="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <option value="">All statuses</option>
+                            <option value="OPEN">Open</option>
+                            <option value="IN_PROGRESS">In Progress</option>
+                            <option value="ON_HOLD">On Hold</option>
+                            <option value="COMPLETED">Completed</option>
+                            <option value="CLOSED">Closed</option>
+                        </select>
+                        <select id="jcTypeFilter" onchange="renderJobCards()" class="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <option value="">All types</option>
+                            <option value="INTERNAL">Internal</option>
+                            <option value="OUTSOURCED">Outsourced</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-150 dark:border-slate-800">
+                                <tr class="text-left text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                    <th class="px-5 py-4">Job No</th>
+                                    <th class="px-5 py-4">Vehicle / Machinery</th>
+                                    <th class="px-5 py-4">Type</th>
+                                    <th class="px-5 py-4">Date</th>
+                                    <th class="px-5 py-4">Status</th>
+                                    <th class="px-5 py-4 text-right">Labour (Rs.)</th>
+                                    <th class="px-5 py-4 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jobCardsTableBody" class="divide-y divide-slate-100 dark:divide-slate-800/70"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================ JOB CARD (create / edit) ============================ -->
+            <section id="view-jobcard-entry" class="route-view hidden space-y-6 max-w-4xl mx-auto">
+                <div class="flex items-center gap-3">
+                    <a href="#jobcards" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white transition" title="Back to Job Cards">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                    </a>
+                    <div>
+                        <h2 id="jcEntryTitle" class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">New Job Card</h2>
+                        <p id="jcEntrySubtitle" class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-0.5">Create a vehicle / machinery repair or service job.</p>
+                    </div>
+                </div>
+
+                <form id="jobCardForm" onsubmit="saveJobCard(event)" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm p-6 sm:p-8 space-y-5">
+                    <input type="hidden" id="jcId">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Job Type</label>
+                            <select id="jcType" onchange="toggleVendorField()" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                                <option value="INTERNAL">Internal Workshop Job</option>
+                                <option value="OUTSOURCED">Outsourced Service Request</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Vehicle / Machinery</label>
+                            <input id="jcVehicle" list="vehicleDatalist" required placeholder="e.g. LM-6658" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Date</label>
+                            <input id="jcDate" type="date" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Project / Plant</label>
+                            <input id="jcProject" placeholder="e.g. Badalgama" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Meter (km / hrs)</label>
+                            <input id="jcMeter" type="number" step="any" placeholder="e.g. 84211" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Repair Type</label>
+                            <select id="jcRepairType" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                                <option value="">—</option>
+                                <option value="Accident">Accident</option>
+                                <option value="Running">Running Repair</option>
+                                <option value="Service">Service</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Expected Completion</label>
+                            <input id="jcExpectedDate" type="date" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Driver / Operator</label>
+                            <input id="jcDriver" placeholder="Name" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Contact No</label>
+                            <input id="jcContact" placeholder="Phone" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">ECD No</label>
+                            <input id="jcEcd" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                        <div id="jcVendorWrap" class="hidden sm:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Vendor / External Company</label>
+                            <input id="jcVendor" placeholder="Company name" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Required Service / Repair Details</label>
+                        <textarea id="jcDetails" rows="4" placeholder="Describe the work required…" class="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-500"></textarea>
+                    </div>
+                    <div id="jcEntryError" class="hidden text-sm font-semibold text-rose-500 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-2"></div>
+                    <div class="flex items-center justify-end gap-3 pt-2">
+                        <a href="#jobcards" class="px-5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Cancel</a>
+                        <button id="jcSaveBtn" type="submit" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-400 hover:to-indigo-600 text-white text-sm font-bold shadow-sm transition">Save Job Card</button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- ============================ JOB CARD detail modal ============================ -->
+            <div id="jobCardModal" class="hidden fixed inset-0 z-[60] flex items-start justify-center p-4 sm:p-8 overflow-y-auto">
+                <div class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onclick="closeJobCardModal()"></div>
+                <div class="relative w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl my-4">
+                    <div id="jobCardModalContent" class="p-6 sm:p-8"></div>
+                </div>
+            </div>
+
+            <!-- ============================ DAILY PROGRAMME (today view) ============================ -->
+            <section id="view-programme" class="route-view hidden space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <h2 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Daily Programme</h2>
+                        <p class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-1">Log each day's work against a job card. Labour cost is calculated from mechanic hours &amp; rates.</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <input id="dpViewDate" type="date" onchange="renderProgramme()" class="px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <button onclick="openMechanicsModal()" class="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition whitespace-nowrap">Mechanics &amp; Rates</button>
+                    </div>
+                </div>
+
+                <!-- Quick add -->
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm p-5 sm:p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 id="dpqHeading" class="text-sm font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Add Today's Work</h3>
+                        <span id="dpqEditBadge" class="hidden text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-2 py-1 rounded-lg">Editing</span>
+                    </div>
+                    <input type="hidden" id="dpqEditId">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="lg:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Vehicle / Machinery <span class="text-slate-400 normal-case font-medium">(auto-matches a job by date ±2d)</span></label>
+                            <input id="dpqVehicle" list="vehicleDatalist" oninput="dpqMatchPreview()" placeholder="e.g. LM-6658" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <div id="dpqMatchInfo" class="text-[11px] font-semibold mt-1 min-h-[15px] text-slate-400"></div>
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Job Card <span class="text-slate-400 normal-case font-medium">(optional override)</span></label>
+                            <select id="dpqJob" onchange="dpqMatchPreview()" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40"></select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Hours</label>
+                            <input id="dpqHours" type="number" step="any" min="0" placeholder="e.g. 8" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Outside Value (Rs.)</label>
+                            <input id="dpqOutside" type="number" step="any" min="0" placeholder="0" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Mechanics <span class="text-slate-400 normal-case font-medium">(comma separated)</span></label>
+                            <input id="dpqMechanics" list="mechanicDatalist" placeholder="e.g. Saman, Vinod" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Work Done</label>
+                            <input id="dpqWork" placeholder="Describe the day's work…" class="w-full px-4 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        </div>
+                    </div>
+                    <div id="dpqError" class="hidden mt-3 text-sm font-semibold text-rose-500"></div>
+                    <div class="flex items-center justify-end gap-3 mt-4">
+                        <button id="dpqCancel" onclick="resetDailyForm()" class="hidden px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-sm font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Cancel</button>
+                        <button onclick="saveDailyEntry()" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-700 hover:from-indigo-400 hover:to-indigo-600 text-white text-sm font-bold shadow-sm transition">Save Entry</button>
+                    </div>
+                </div>
+
+                <!-- Summary + list -->
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Entries</div><div id="dpSumCount" class="text-xl font-black text-slate-800 dark:text-white mt-0.5">0</div></div>
+                    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Hours</div><div id="dpSumHours" class="text-xl font-black text-slate-800 dark:text-white mt-0.5">0</div></div>
+                    <div class="bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-2xl p-4"><div class="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Labour (Rs.)</div><div id="dpSumLabour" class="text-xl font-black text-indigo-700 dark:text-indigo-400 mt-0.5">0</div></div>
+                </div>
+
+                <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-150 dark:border-slate-800">
+                                <tr class="text-left text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                    <th class="px-5 py-4">Job</th><th class="px-5 py-4">Work / Mechanics</th>
+                                    <th class="px-5 py-4 text-right">Hours</th><th class="px-5 py-4 text-right">Labour</th><th class="px-5 py-4 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="programmeTodayBody" class="divide-y divide-slate-100 dark:divide-slate-800/70"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Mechanics & Rates modal -->
+            <div id="mechanicsModal" class="hidden fixed inset-0 z-[60] flex items-start justify-center p-4 sm:p-8 overflow-y-auto">
+                <div class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onclick="closeMechanicsModal()"></div>
+                <div class="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl my-4 p-6 sm:p-7">
+                    <div class="flex items-center justify-between mb-5">
+                        <h3 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Mechanics &amp; Hourly Rates</h3>
+                        <button onclick="closeMechanicsModal()" class="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                    </div>
+                    <div class="flex gap-2 mb-4">
+                        <input id="newMechName" placeholder="New mechanic name" class="flex-grow px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <input id="newMechRate" type="number" step="any" placeholder="Rs./hr" class="w-24 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                        <button onclick="addMechanic()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-sm font-bold">Add</button>
+                    </div>
+                    <div id="mechanicsListBody" class="space-y-2 max-h-[50vh] overflow-y-auto"></div>
+                </div>
+            </div>
+            <datalist id="mechanicDatalist"></datalist>
+            <datalist id="jobItemOptions"></datalist>
+
             <section id="view-dashboard" class="route-view hidden space-y-6">
+                <!-- ===== Unified Command Centre (server-side analytics, filterable) ===== -->
+                <div class="space-y-5">
+                    <div class="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
+                        <div>
+                            <h2 class="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Command Centre</h2>
+                            <p class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-1">Workshop &amp; stores at a glance — spend, sourcing and job cost.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <div class="flex rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0">
+                                <button onclick="dashPreset('month')" id="dashPresetMonth" class="dash-preset px-3 py-2 text-xs font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300">Month</button>
+                                <button onclick="dashPreset('year')" id="dashPresetYear" class="dash-preset px-3 py-2 text-xs font-bold bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-l border-slate-200 dark:border-slate-700">Year</button>
+                                <button onclick="dashPreset('all')" id="dashPresetAll" class="dash-preset px-3 py-2 text-xs font-bold bg-indigo-600 text-white">All</button>
+                            </div>
+                            <input id="dashStart" type="date" onchange="dashClearPreset(); renderUnifiedDashboard()" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="dashEnd" type="date" onchange="dashClearPreset(); renderUnifiedDashboard()" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <select id="dashSource" onchange="renderUnifiedDashboard()" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40"><option value="">All sources</option><option value="local">Local</option><option value="headOffice">Head Office</option><option value="other">Other</option></select>
+                            <select id="dashCategory" onchange="renderUnifiedDashboard()" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40"><option value="">All categories</option></select>
+                            <input id="dashVehicle" list="vehicleDatalist" oninput="dashDebounced()" placeholder="Vehicle" class="w-28 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="dashSupplier" oninput="dashDebounced()" placeholder="Supplier" class="w-28 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <button onclick="dashReset()" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700">Reset</button>
+                        </div>
+                    </div>
+
+                    <!-- KPI tiles -->
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="relative overflow-hidden bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-2xl p-5 shadow-glow text-white">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-white/70">Spend · This Month</p>
+                            <h3 id="kpiMtd" class="text-2xl font-black mt-1.5 tracking-tight">Rs. 0</h3>
+                        </div>
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Spend · This Year</p>
+                            <h3 id="kpiYtd" class="text-2xl font-black text-slate-800 dark:text-white mt-1.5 tracking-tight">Rs. 0</h3>
+                        </div>
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark">
+                            <p id="kpiPeriodLabel" class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Spend · All Time</p>
+                            <h3 id="kpiPeriod" class="text-2xl font-black text-slate-800 dark:text-white mt-1.5 tracking-tight">Rs. 0</h3>
+                        </div>
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-5 shadow-glass-light dark:shadow-glass-dark">
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Active Jobs · Job Cost</p>
+                            <h3 class="text-2xl font-black text-slate-800 dark:text-white mt-1.5 tracking-tight"><span id="kpiJobs">0</span> <span id="kpiJobCost" class="text-sm font-bold text-slate-400">Rs. 0</span></h3>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                        <!-- Local vs Head Office -->
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-6 shadow-glass-light dark:shadow-glass-dark">
+                            <h3 class="text-xs font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Received Value — Local vs Head Office</h3>
+                            <div class="w-full bg-slate-100 dark:bg-slate-800/80 rounded-full h-3 overflow-hidden flex mb-4">
+                                <div id="dashBarHo" class="bg-indigo-600 dark:bg-indigo-500 h-full transition-all" style="width:0%"></div>
+                                <div id="dashBarLocal" class="bg-emerald-500 h-full transition-all" style="width:0%"></div>
+                                <div id="dashBarOther" class="bg-slate-400 h-full transition-all" style="width:0%"></div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-3 text-center">
+                                <div><div class="flex items-center justify-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-600"></span><span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Head Office</span></div><div id="dashHo" class="text-base font-black text-slate-800 dark:text-white mt-1">Rs. 0</div></div>
+                                <div><div class="flex items-center justify-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Local</span></div><div id="dashLocal" class="text-base font-black text-slate-800 dark:text-white mt-1">Rs. 0</div></div>
+                                <div><div class="flex items-center justify-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-400"></span><span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Other</span></div><div id="dashOther" class="text-base font-black text-slate-800 dark:text-white mt-1">Rs. 0</div></div>
+                            </div>
+                        </div>
+                        <!-- Supplier distribution -->
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 p-6 shadow-glass-light dark:shadow-glass-dark">
+                            <h3 class="text-xs font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Supplier Spend Distribution</h3>
+                            <div class="flex items-center gap-4">
+                                <div class="relative w-32 h-32 shrink-0"><canvas id="dashSupplierChart"></canvas></div>
+                                <div id="dashSupplierList" class="flex-grow space-y-1.5 min-w-0"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Daily received split -->
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-glass-light dark:shadow-glass-dark overflow-hidden">
+                        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+                            <h3 class="text-xs font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Daily Received Value — Local vs Head Office</h3>
+                            <span id="dashDailyHint" class="text-[11px] font-semibold text-slate-400"></span>
+                        </div>
+                        <div class="overflow-x-auto max-h-80 overflow-y-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-slate-50 dark:bg-slate-900/80 sticky top-0">
+                                    <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                        <th class="px-6 py-3">Date</th><th class="px-6 py-3 text-right">Head Office</th><th class="px-6 py-3 text-right">Local</th><th class="px-6 py-3 text-right">Other</th><th class="px-6 py-3 text-right">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dashDailyBody" class="divide-y divide-slate-100 dark:divide-slate-800/70"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Premium Analytics / KPI Cards Section -->
                 <div class="space-y-4">
                     <h2 class="text-xs font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Financial Overview</h2>
@@ -1682,7 +2045,13 @@
                     <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Requested Qty <span class="text-red-500">*</span></label>
                     <input type="number" id="reqQty" step="0.01" required min="0.01" placeholder="e.g. 10" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100">
                 </div>
-                
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Link to Job Card <span class="text-slate-400 normal-case font-medium">(optional — for job cost)</span></label>
+                    <select id="jcLinkSelect" class="block w-full rounded-xl border-slate-200 dark:border-slate-800 shadow-sm p-3 border focus:border-indigo-500 focus:ring-indigo-500 outline-none transition text-sm bg-slate-50 dark:bg-slate-900 focus:bg-white dark:focus:bg-slate-950 text-slate-800 dark:text-slate-100 font-semibold">
+                        <option value="">— No job card —</option>
+                    </select>
+                </div>
+
                 <div class="md:col-span-2 flex justify-end space-x-3 mt-4 pt-5 border-t border-slate-100 dark:border-slate-800">
                     <button type="button" onclick="closeAddModal()" class="px-5 py-3 bg-slate-100 dark:bg-slate-850 text-slate-700 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 transition text-sm">Cancel</button>
                     <button type="submit" class="px-6 py-3 bg-indigo-650 hover:bg-indigo-700 text-white font-bold rounded-xl hover:shadow-glow shadow-sm transition text-sm">Submit Request</button>
@@ -2437,7 +2806,7 @@
         });
 
         // Add Modals Toggles
-        function openAddModal() { addModal.classList.remove('hidden'); }
+        function openAddModal() { addModal.classList.remove('hidden'); if (typeof populateJobLinkSelect === 'function') populateJobLinkSelect(); }
         function closeAddModal() { 
             addModal.classList.add('hidden'); 
             addForm.reset(); 
@@ -4926,7 +5295,7 @@
         // Central Router Engine
         function handleRouting() {
             const hash = window.location.hash || '#dashboard';
-            const views = ['dashboard', 'tracker', 'receiving', 'pricing', 'fleet', 'issued', 'issue-desk', 'inventory', 'batteries', 'battery-entry', 'battery-move', 'transfers', 'transfer-entry'];
+            const views = ['dashboard', 'jobcards', 'jobcard-entry', 'programme', 'tracker', 'receiving', 'pricing', 'fleet', 'issued', 'issue-desk', 'inventory', 'batteries', 'battery-entry', 'battery-move', 'transfers', 'transfer-entry'];
             
             let matchedView = 'dashboard';
             let routeParam = null;
@@ -4955,6 +5324,7 @@
             closeAddModal();
             closeBatteryOffcanvas();
             closeTransferOffcanvas();
+            closeJobCardModal();
 
             // Toggle route views visibility in main frame
             document.querySelectorAll('.route-view').forEach(el => {
@@ -4990,6 +5360,16 @@
             switch(currentView) {
                 case 'dashboard':
                     renderDashboard();
+                    if (typeof renderUnifiedDashboard === 'function') renderUnifiedDashboard();
+                    break;
+                case 'jobcards':
+                    renderJobCards();
+                    break;
+                case 'jobcard-entry':
+                    setupJobCardEntry(param);
+                    break;
+                case 'programme':
+                    renderProgramme();
                     break;
                 case 'tracker':
                     renderTable();
@@ -5291,8 +5671,11 @@
             const itemDesc = document.getElementById('itemDesc').value.trim();
             const reqQty = parseFloat(document.getElementById('reqQty').value);
             const category = document.getElementById('itemCategory').value;
+            const jcLinkEl = document.getElementById('jcLinkSelect');
+            const jobCardId = jcLinkEl && jcLinkEl.value ? Number(jcLinkEl.value) : undefined;
 
             const newItem = { mrnNum, reqDate, vehicleMachinery, itemName, itemDesc, reqQty, category };
+            if (jobCardId) newItem.jobCardId = jobCardId;
 
             await syncService.enqueue(
                 'CREATE_ITEM',
@@ -6978,6 +7361,828 @@
 
         function loadItems() {
             loadAllData();
+        }
+    </script>
+
+    <!-- Job Cards module (unified Workshop + Stores system) -->
+    <script>
+        const jcEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const jcCur = (n) => (typeof formatCurrency === 'function') ? formatCurrency(n) : ('Rs. ' + Number(n || 0).toLocaleString());
+        const jcDate = (iso) => {
+            if (!iso) return '—';
+            const d = new Date(iso); if (isNaN(d)) return jcEsc(iso);
+            return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+        };
+        const JC_STATUS_META = {
+            OPEN:        { label: 'Open',        cls: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' },
+            IN_PROGRESS: { label: 'In Progress', cls: 'bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400' },
+            ON_HOLD:     { label: 'On Hold',     cls: 'bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400' },
+            COMPLETED:   { label: 'Completed',   cls: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400' },
+            CLOSED:      { label: 'Closed',      cls: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400' },
+        };
+        const JC_STATUS_ACTION = {
+            IN_PROGRESS: { label: 'Start / Resume', tone: 'from-blue-500 to-blue-700' },
+            ON_HOLD:     { label: 'Put On Hold',    tone: 'from-amber-500 to-amber-600', note: true },
+            COMPLETED:   { label: 'Complete',       tone: 'from-emerald-500 to-emerald-700' },
+            CLOSED:      { label: 'Close',          tone: 'from-indigo-500 to-indigo-700' },
+        };
+
+        function jcBadge(status) {
+            const m = JC_STATUS_META[status] || JC_STATUS_META.OPEN;
+            return `<span class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider ${m.cls}">${m.label}</span>`;
+        }
+
+        async function renderJobCards() {
+            const body = document.getElementById('jobCardsTableBody');
+            if (!body) return;
+            const q = new URLSearchParams();
+            const search = (document.getElementById('jcSearch') || {}).value;
+            const status = (document.getElementById('jcStatusFilter') || {}).value;
+            const type = (document.getElementById('jcTypeFilter') || {}).value;
+            if (search) q.set('search', search);
+            if (status) q.set('status', status);
+            if (type) q.set('type', type);
+            q.set('limit', '200');
+            body.innerHTML = `<tr><td colspan="7" class="px-5 py-10 text-center text-sm font-semibold text-slate-400">Loading…</td></tr>`;
+            let data;
+            try {
+                const res = await fetch('/api/jobcards?' + q.toString());
+                data = await res.json();
+            } catch (e) {
+                body.innerHTML = `<tr><td colspan="7" class="px-5 py-10 text-center text-sm font-semibold text-rose-500">Failed to load job cards.</td></tr>`;
+                return;
+            }
+            const rows = (data && data.jobcards) || [];
+            const badge = document.getElementById('count-jobcards');
+            if (badge) badge.textContent = rows.filter((r) => r.status !== 'CLOSED').length;
+            if (!rows.length) {
+                body.innerHTML = `<tr><td colspan="7" class="px-5 py-12 text-center"><div class="text-sm font-semibold text-slate-400 dark:text-slate-500">No job cards yet.</div><a href="#jobcard-entry" class="inline-block mt-3 text-sm font-bold text-indigo-600 dark:text-indigo-400">+ Create the first job card</a></td></tr>`;
+                return;
+            }
+            body.innerHTML = rows.map((r) => `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition cursor-pointer" onclick="openJobCardDetail(${r.id})">
+                    <td class="px-5 py-3.5 font-extrabold text-slate-800 dark:text-slate-100">${jcEsc(r.jobNo || '—')}</td>
+                    <td class="px-5 py-3.5 font-semibold text-slate-700 dark:text-slate-300">${jcEsc(r.vehicleMachinery || '—')}</td>
+                    <td class="px-5 py-3.5"><span class="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">${r.type === 'OUTSOURCED' ? 'Outsourced' : 'Internal'}</span></td>
+                    <td class="px-5 py-3.5 text-slate-500 dark:text-slate-400 font-semibold">${jcDate(r.dateISO)}</td>
+                    <td class="px-5 py-3.5">${jcBadge(r.status)}</td>
+                    <td class="px-5 py-3.5 text-right font-bold text-slate-700 dark:text-slate-300">${(r.labourCost || 0) > 0 ? jcCur(r.labourCost) : '—'}</td>
+                    <td class="px-5 py-3.5 text-right" onclick="event.stopPropagation()">
+                        <button onclick="editJobCard(${r.id})" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Edit</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        async function openJobCardDetail(id) {
+            const modal = document.getElementById('jobCardModal');
+            const mount = document.getElementById('jobCardModalContent');
+            if (!modal || !mount) return;
+            mount.innerHTML = `<div class="py-10 text-center text-sm font-semibold text-slate-400">Loading…</div>`;
+            modal.classList.remove('hidden');
+            let jc;
+            try { jc = await (await fetch('/api/jobcards/' + id)).json(); } catch (e) { jc = null; }
+            if (!jc || jc.error) { mount.innerHTML = `<div class="py-10 text-center text-sm font-semibold text-rose-500">Could not load this job card.</div>`; return; }
+            renderJobCardModal(jc);
+        }
+        function closeJobCardModal() {
+            const modal = document.getElementById('jobCardModal');
+            if (modal) modal.classList.add('hidden');
+        }
+
+        function jcField(label, value) {
+            return `<div><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">${label}</div><div class="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">${value || '—'}</div></div>`;
+        }
+
+        function renderJobCardModal(jc) {
+            const mount = document.getElementById('jobCardModalContent');
+            const actions = (jc.availableStatuses || []).map((st) => {
+                const a = JC_STATUS_ACTION[st]; if (!a) return '';
+                return `<button onclick="changeJobStatus(${jc.id}, '${st}', ${a.note ? 'true' : 'false'})" class="px-4 py-2 rounded-xl bg-gradient-to-r ${a.tone} text-white text-xs font-bold shadow-sm transition">${a.label}</button>`;
+            }).join('');
+            const timeline = (jc.audits || []).map((au) => `
+                <div class="flex gap-3 text-xs">
+                    <div class="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0"></div>
+                    <div>
+                        <span class="font-bold text-slate-700 dark:text-slate-300">${jcEsc(au.action)}</span>
+                        ${au.fromStatus ? `<span class="text-slate-400">· ${jcEsc(au.fromStatus)} → ${jcEsc(au.toStatus || '')}</span>` : (au.toStatus ? `<span class="text-slate-400">· ${jcEsc(au.toStatus)}</span>` : '')}
+                        ${au.note ? `<div class="text-slate-500 dark:text-slate-400 mt-0.5 italic">“${jcEsc(au.note)}”</div>` : ''}
+                        <div class="text-[10px] text-slate-400 mt-0.5">${jcEsc(au.userName || '')} · ${jcDate(au.at)}</div>
+                    </div>
+                </div>`).join('');
+            mount.innerHTML = `
+                <div class="flex items-start justify-between gap-4 mb-5">
+                    <div>
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-xl font-black text-slate-900 dark:text-white tracking-tight">${jcEsc(jc.jobNo || 'Job Card')}</h3>
+                            ${jcBadge(jc.status)}
+                        </div>
+                        <div class="text-sm font-semibold text-slate-450 dark:text-slate-500 mt-1">${jc.type === 'OUTSOURCED' ? 'Outsourced Service Request' : 'Internal Workshop Job'} · ${jcEsc(jc.vehicleMachinery || '')}</div>
+                    </div>
+                    <button onclick="closeJobCardModal()" class="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl p-4 mb-5">
+                    ${jcField('Date', jcDate(jc.dateISO))}
+                    ${jcField('Project / Plant', jcEsc(jc.projectName))}
+                    ${jcField('Meter', jc.meter != null ? jcEsc(jc.meter) : '—')}
+                    ${jcField('Repair Type', jcEsc(jc.repairType))}
+                    ${jcField('Expected', jcDate(jc.expectedDateISO))}
+                    ${jcField('Driver / Operator', jcEsc(jc.driverName))}
+                    ${jcField('Contact', jcEsc(jc.contactNo))}
+                    ${jcField('ECD No', jcEsc(jc.ecdNo))}
+                    ${jc.type === 'OUTSOURCED' ? jcField('Vendor', jcEsc(jc.vendorName)) : ''}
+                </div>
+
+                ${jc.details ? `<div class="mb-5"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Required Work</div><div class="text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/40 rounded-xl p-3">${jcEsc(jc.details)}</div></div>` : ''}
+
+                <div class="grid grid-cols-3 gap-3 mb-5">
+                    <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Parts</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.partsCost || 0)}</div></div>
+                    <div class="rounded-2xl border border-slate-150 dark:border-slate-800 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Labour</div><div class="text-base font-black text-slate-800 dark:text-slate-100 mt-0.5">${jcCur(jc.labourCost || 0)}</div></div>
+                    <div class="rounded-2xl border border-indigo-100 dark:border-indigo-900/40 bg-indigo-50/50 dark:bg-indigo-950/20 p-3"><div class="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Total Job Cost</div><div class="text-base font-black text-indigo-700 dark:text-indigo-400 mt-0.5">${jcCur(jc.totalCost || 0)}</div></div>
+                </div>
+
+                <!-- Daily Programme mount (Phase 3) -->
+                <div id="jcProgrammeMount"></div>
+                <!-- Linked MRNs mount (Phase 4) -->
+                <div id="jcMrnMount"></div>
+                <!-- Issued items mount (Addendum 3) -->
+                <div id="jcIssuesMount"></div>
+
+                <div class="flex flex-wrap items-center gap-2 mt-5 pt-5 border-t border-slate-100 dark:border-slate-800">
+                    ${actions}
+                    <div class="flex-grow"></div>
+                    <button onclick="editJobCard(${jc.id})" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Edit Job Card</button>
+                </div>
+
+                ${timeline ? `<div class="mt-6"><div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-3">Activity</div><div class="space-y-3">${timeline}</div></div>` : ''}
+            `;
+            if (typeof renderJobProgramme === 'function') renderJobProgramme(jc);   // Phase 3 hook
+            if (typeof renderJobMrns === 'function') renderJobMrns(jc);             // Phase 4 hook
+            if (typeof renderJobIssues === 'function') renderJobIssues(jc);         // Addendum 3 hook
+        }
+
+        async function changeJobStatus(id, status, needNote) {
+            let note = '';
+            if (needNote) {
+                note = prompt('Reason for putting this job on hold:') || '';
+                if (note === null) return;
+            }
+            try {
+                const res = await fetch('/api/jobcards/' + id + '/status', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status, note })
+                });
+                const data = await res.json();
+                if (!res.ok) { alert(data.error || 'Could not change status.'); return; }
+                renderJobCardModal(data.jobcard);
+                renderJobCards();
+            } catch (e) { alert('Network error.'); }
+        }
+
+        function editJobCard(id) { closeJobCardModal(); window.location.hash = '#jobcard-entry/' + id; }
+        function toggleVendorField() {
+            const wrap = document.getElementById('jcVendorWrap');
+            const type = (document.getElementById('jcType') || {}).value;
+            if (wrap) wrap.classList.toggle('hidden', type !== 'OUTSOURCED');
+        }
+
+        async function setupJobCardEntry(param) {
+            const form = document.getElementById('jobCardForm');
+            if (form) form.reset();
+            const err = document.getElementById('jcEntryError'); if (err) err.classList.add('hidden');
+            document.getElementById('jcId').value = '';
+            const title = document.getElementById('jcEntryTitle');
+            const sub = document.getElementById('jcEntrySubtitle');
+            if (param) {
+                if (title) title.textContent = 'Edit Job Card';
+                if (sub) sub.textContent = 'Update the job card details.';
+                try {
+                    const jc = await (await fetch('/api/jobcards/' + param)).json();
+                    if (jc && !jc.error) {
+                        document.getElementById('jcId').value = jc.id;
+                        document.getElementById('jcType').value = jc.type || 'INTERNAL';
+                        document.getElementById('jcVehicle').value = jc.vehicleMachinery || '';
+                        document.getElementById('jcDate').value = jc.dateISO || '';
+                        document.getElementById('jcProject').value = jc.projectName || '';
+                        document.getElementById('jcMeter').value = jc.meter != null ? jc.meter : '';
+                        document.getElementById('jcRepairType').value = jc.repairType || '';
+                        document.getElementById('jcExpectedDate').value = jc.expectedDateISO || '';
+                        document.getElementById('jcDriver').value = jc.driverName || '';
+                        document.getElementById('jcContact').value = jc.contactNo || '';
+                        document.getElementById('jcEcd').value = jc.ecdNo || '';
+                        document.getElementById('jcVendor').value = jc.vendorName || '';
+                        document.getElementById('jcDetails').value = jc.details || '';
+                    }
+                } catch (e) { /* ignore */ }
+            } else {
+                if (title) title.textContent = 'New Job Card';
+                if (sub) sub.textContent = 'Create a vehicle / machinery repair or service job.';
+                const d = document.getElementById('jcDate'); if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+            }
+            toggleVendorField();
+        }
+
+        async function saveJobCard(event) {
+            event.preventDefault();
+            const err = document.getElementById('jcEntryError'); if (err) err.classList.add('hidden');
+            const id = document.getElementById('jcId').value;
+            const payload = {
+                type: document.getElementById('jcType').value,
+                vehicleMachinery: document.getElementById('jcVehicle').value,
+                date: document.getElementById('jcDate').value,
+                projectName: document.getElementById('jcProject').value,
+                meter: document.getElementById('jcMeter').value,
+                repairType: document.getElementById('jcRepairType').value,
+                expectedDate: document.getElementById('jcExpectedDate').value,
+                driverName: document.getElementById('jcDriver').value,
+                contactNo: document.getElementById('jcContact').value,
+                ecdNo: document.getElementById('jcEcd').value,
+                vendorName: document.getElementById('jcVendor').value,
+                details: document.getElementById('jcDetails').value,
+            };
+            if (!payload.vehicleMachinery.trim()) { if (err) { err.textContent = 'Vehicle / Machinery is required.'; err.classList.remove('hidden'); } return; }
+            const btn = document.getElementById('jcSaveBtn'); if (btn) btn.disabled = true;
+            try {
+                const res = await fetch('/api/jobcards' + (id ? '/' + id : ''), {
+                    method: id ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok) { if (err) { err.textContent = data.error || 'Could not save.'; err.classList.remove('hidden'); } if (btn) btn.disabled = false; return; }
+                window.location.hash = '#jobcards';
+            } catch (e) {
+                if (err) { err.textContent = 'Network error — please try again.'; err.classList.remove('hidden'); }
+                if (btn) btn.disabled = false;
+            }
+        }
+    </script>
+
+    <!-- Daily Programme module (per-job log + Today view + mechanic rates) -->
+    <script>
+        const dpTodayISO = () => new Date().toISOString().slice(0, 10);
+
+        // ---- Programme section inside the Job Card detail modal ----
+        function renderJobProgramme(jc) {
+            const mount = document.getElementById('jcProgrammeMount');
+            if (!mount) return;
+            const entries = jc.programme || [];
+            window.__jcProgramme = {}; entries.forEach((e) => { window.__jcProgramme[e.id] = e; });
+            const mechOpts = (window.__mechanics || []).map((n) => `<option value="${jcEsc(n)}">${jcEsc(n)}</option>`).join('');
+            const rows = entries.map((e) => `
+                <div class="flex items-start justify-between gap-3 py-2.5 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
+                    <div class="min-w-0">
+                        <div class="text-xs font-bold text-slate-700 dark:text-slate-200">${jcDate(e.entryDateISO)} · ${e.hours || 0}h ${e.mechanics ? '· ' + jcEsc(e.mechanics) : ''}</div>
+                        ${e.workDescription ? `<div class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${jcEsc(e.workDescription)}</div>` : ''}
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="text-xs font-extrabold text-slate-700 dark:text-slate-200">${jcCur(e.labourCost || 0)}</span>
+                        <button onclick="editJobDaily(${e.id})" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">Edit</button>
+                        <button onclick="deleteJobDaily(${e.id}, ${jc.id})" class="text-[11px] font-bold text-rose-500">Del</button>
+                    </div>
+                </div>`).join('');
+            mount.innerHTML = `
+                <div class="mt-2 mb-5 rounded-2xl border border-slate-150 dark:border-slate-800 overflow-hidden">
+                    <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-150 dark:border-slate-800">
+                        <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Daily Programme (${entries.length})</span>
+                        <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Labour: ${jcCur(jc.labourCost || 0)}</span>
+                    </div>
+                    <div class="px-4 py-2">${rows || '<div class="py-3 text-xs text-slate-400 italic">No daily entries yet.</div>'}</div>
+                    <div class="px-4 py-3 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800">
+                        <input type="hidden" id="jdpEditId">
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <input id="jdpDate" type="date" value="${dpTodayISO()}" class="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jdpHours" type="number" step="any" min="0" placeholder="Hours" class="px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jdpMechanics" list="mechanicDatalist" placeholder="Mechanics" class="col-span-2 sm:col-span-1 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <select id="jdpMechPick" onchange="jdpAddMech(this)" class="col-span-2 sm:col-span-1 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-500 dark:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                                <option value="">+ Add mechanic ▾</option>
+                                ${mechOpts}
+                            </select>
+                            <input id="jdpWork" placeholder="Work done" class="col-span-2 sm:col-span-3 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <button onclick="saveJobDaily(${jc.id})" class="px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Add</button>
+                        </div>
+                        <div id="jdpError" class="hidden mt-2 text-xs font-semibold text-rose-500"></div>
+                    </div>
+                </div>`;
+        }
+        // Pick a mechanic from the ▾ list → append to the comma-separated Mechanics field.
+        function jdpAddMech(sel) {
+            const name = (sel.value || '').trim(); if (!name) return;
+            const inp = document.getElementById('jdpMechanics');
+            if (inp) {
+                const cur = inp.value.split(',').map((x) => x.trim()).filter(Boolean);
+                if (!cur.some((x) => x.toLowerCase() === name.toLowerCase())) cur.push(name);
+                inp.value = cur.join(', ');
+            }
+            sel.value = '';
+        }
+        function editJobDaily(id) {
+            const e = (window.__jcProgramme || {})[id]; if (!e) return;
+            document.getElementById('jdpEditId').value = e.id;
+            document.getElementById('jdpDate').value = e.entryDateISO || dpTodayISO();
+            document.getElementById('jdpHours').value = e.hours || '';
+            document.getElementById('jdpMechanics').value = e.mechanics || '';
+            document.getElementById('jdpWork').value = e.workDescription || '';
+        }
+        async function saveJobDaily(jobCardId) {
+            const editId = document.getElementById('jdpEditId').value;
+            const payload = {
+                entryDate: document.getElementById('jdpDate').value,
+                hours: document.getElementById('jdpHours').value,
+                mechanics: document.getElementById('jdpMechanics').value,
+                workDescription: document.getElementById('jdpWork').value,
+            };
+            const err = document.getElementById('jdpError');
+            try {
+                const url = editId ? '/api/programme/' + editId : '/api/jobcards/' + jobCardId + '/programme';
+                const res = await fetch(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await res.json();
+                if (!res.ok) { if (err) { err.textContent = data.error || 'Could not save.'; err.classList.remove('hidden'); } return; }
+                openJobCardDetail(jobCardId);
+                if (typeof renderJobCards === 'function') renderJobCards();
+            } catch (e) { if (err) { err.textContent = 'Network error.'; err.classList.remove('hidden'); } }
+        }
+        async function deleteJobDaily(id, jobCardId) {
+            if (!confirm('Delete this daily entry?')) return;
+            try { await fetch('/api/programme/' + id, { method: 'DELETE' }); openJobCardDetail(jobCardId); if (typeof renderJobCards === 'function') renderJobCards(); } catch (e) {}
+        }
+
+        // ---- "Today" view ----
+        async function loadJobOptions(selectedId) {
+            const sel = document.getElementById('dpqJob'); if (!sel) return;
+            let data; try { data = await (await fetch('/api/jobcards?limit=300')).json(); } catch (e) { return; }
+            const active = (data.jobcards || []).filter((j) => j.status !== 'CLOSED');
+            sel.innerHTML = '<option value="">— Auto-match by vehicle —</option>' +
+                active.map((j) => `<option value="${j.id}">${jcEsc(j.jobNo)} · ${jcEsc(j.vehicleMachinery || '')}</option>`).join('');
+            if (selectedId) sel.value = String(selectedId);
+        }
+        async function renderProgramme() {
+            const dateInput = document.getElementById('dpViewDate');
+            if (dateInput && !dateInput.value) dateInput.value = dpTodayISO();
+            const dateISO = (dateInput && dateInput.value) || dpTodayISO();
+            await loadJobOptions(document.getElementById('dpqJob') ? document.getElementById('dpqJob').value : null);
+            const body = document.getElementById('programmeTodayBody'); if (!body) return;
+            body.innerHTML = `<tr><td colspan="5" class="px-5 py-8 text-center text-sm font-semibold text-slate-400">Loading…</td></tr>`;
+            let data; try { data = await (await fetch('/api/programme?dateISO=' + encodeURIComponent(dateISO))).json(); } catch (e) { return; }
+            const entries = data.programme || [];
+            window.__todayProgramme = {}; entries.forEach((e) => { window.__todayProgramme[e.id] = e; });
+            let hrs = 0, lab = 0;
+            entries.forEach((e) => { hrs += Number(e.hours) || 0; lab += Number(e.labourCost) || 0; });
+            document.getElementById('dpSumCount').textContent = entries.length;
+            document.getElementById('dpSumHours').textContent = (Math.round(hrs * 100) / 100);
+            document.getElementById('dpSumLabour').textContent = jcCur(lab);
+            body.innerHTML = entries.length ? entries.map((e) => `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition">
+                    <td class="px-5 py-3 font-bold text-slate-800 dark:text-slate-100">${jcEsc(e.jobNo || '—')}<div class="text-[10px] font-semibold text-slate-400">${jcEsc(e.vehicleMachinery || '')}</div></td>
+                    <td class="px-5 py-3"><div class="text-slate-700 dark:text-slate-300 font-semibold">${jcEsc(e.workDescription || '—')}</div><div class="text-[11px] text-slate-400 mt-0.5">${jcEsc(e.mechanics || '')}</div></td>
+                    <td class="px-5 py-3 text-right font-bold text-slate-700 dark:text-slate-300">${e.hours || 0}</td>
+                    <td class="px-5 py-3 text-right font-extrabold text-slate-800 dark:text-slate-100">${jcCur(e.labourCost || 0)}</td>
+                    <td class="px-5 py-3 text-right whitespace-nowrap">
+                        <button onclick="editDailyEntry(${e.id})" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mr-2">Edit</button>
+                        <button onclick="deleteTodayEntry(${e.id})" class="text-[11px] font-bold text-rose-500">Del</button>
+                    </td>
+                </tr>`).join('') : `<tr><td colspan="5" class="px-5 py-10 text-center text-sm font-semibold text-slate-400">No work logged for this date.</td></tr>`;
+        }
+        function resetDailyForm() {
+            ['dpqEditId', 'dpqHours', 'dpqOutside', 'dpqMechanics', 'dpqWork', 'dpqVehicle'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+            const mi = document.getElementById('dpqMatchInfo'); if (mi) mi.textContent = '';
+            const b = document.getElementById('dpqEditBadge'); if (b) b.classList.add('hidden');
+            const c = document.getElementById('dpqCancel'); if (c) c.classList.add('hidden');
+            const h = document.getElementById('dpqHeading'); if (h) h.textContent = "Add Today's Work";
+        }
+        let dpqMatchTimer = null;
+        function dpqMatchPreview() {
+            clearTimeout(dpqMatchTimer);
+            dpqMatchTimer = setTimeout(async () => {
+                const info = document.getElementById('dpqMatchInfo'); if (!info) return;
+                const vehicle = ((document.getElementById('dpqVehicle') || {}).value || '').trim();
+                const dateISO = (document.getElementById('dpViewDate') || {}).value || dpTodayISO();
+                if ((document.getElementById('dpqJob') || {}).value) { info.innerHTML = '<span class="text-slate-400">Using the selected job (override).</span>'; return; }
+                if (!vehicle) { info.textContent = ''; return; }
+                try {
+                    const data = await (await fetch('/api/jobcards/match?vehicle=' + encodeURIComponent(vehicle) + '&dateISO=' + encodeURIComponent(dateISO))).json();
+                    if (data.match) info.innerHTML = '→ matches <span class="text-emerald-600 dark:text-emerald-400 font-bold">' + jcEsc(data.match.jobNo) + '</span>';
+                    else info.innerHTML = '→ <span class="text-amber-600 font-bold">no job in window — will file under DW-' + jcEsc(vehicle.replace(/\s+/g, '').toUpperCase()) + '</span>';
+                } catch (e) { info.textContent = ''; }
+            }, 300);
+        }
+        function editDailyEntry(id) {
+            const e = (window.__todayProgramme || {})[id]; if (!e) return;
+            document.getElementById('dpqEditId').value = e.id;
+            loadJobOptions(e.jobCardId);
+            document.getElementById('dpqHours').value = e.hours || '';
+            document.getElementById('dpqOutside').value = e.outsideValue || '';
+            document.getElementById('dpqMechanics').value = e.mechanics || '';
+            document.getElementById('dpqWork').value = e.workDescription || '';
+            const b = document.getElementById('dpqEditBadge'); if (b) b.classList.remove('hidden');
+            const c = document.getElementById('dpqCancel'); if (c) c.classList.remove('hidden');
+            const h = document.getElementById('dpqHeading'); if (h) h.textContent = 'Edit Entry';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        async function saveDailyEntry() {
+            const err = document.getElementById('dpqError'); if (err) err.classList.add('hidden');
+            const editId = document.getElementById('dpqEditId').value;
+            const jobCardId = document.getElementById('dpqJob').value;
+            const vehicle = ((document.getElementById('dpqVehicle') || {}).value || '').trim();
+            const dateISO = (document.getElementById('dpViewDate') || {}).value || dpTodayISO();
+            if (!editId && !jobCardId && !vehicle) { if (err) { err.textContent = 'Enter a vehicle (or pick a job).'; err.classList.remove('hidden'); } return; }
+            const payload = {
+                entryDate: dateISO,
+                hours: document.getElementById('dpqHours').value,
+                outsideValue: document.getElementById('dpqOutside').value,
+                mechanics: document.getElementById('dpqMechanics').value,
+                workDescription: document.getElementById('dpqWork').value,
+            };
+            try {
+                let res;
+                if (editId) res = await fetch('/api/programme/' + editId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                else if (jobCardId) res = await fetch('/api/jobcards/' + jobCardId + '/programme', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                else res = await fetch('/api/programme/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({}, payload, { vehicle })) });
+                const data = await res.json();
+                if (!res.ok) { if (err) { err.textContent = data.error || 'Could not save.'; err.classList.remove('hidden'); } return; }
+                resetDailyForm(); renderProgramme();
+            } catch (e) { if (err) { err.textContent = 'Network error.'; err.classList.remove('hidden'); } }
+        }
+        async function deleteTodayEntry(id) {
+            if (!confirm('Delete this daily entry?')) return;
+            try { await fetch('/api/programme/' + id, { method: 'DELETE' }); renderProgramme(); } catch (e) {}
+        }
+
+        // ---- Mechanics & rates ----
+        async function loadMechanicDatalist() {
+            let data; try { data = await (await fetch('/api/mechanics')).json(); } catch (e) { return; }
+            const active = (data.mechanics || []).filter((m) => m.active);
+            window.__mechanics = active.map((m) => m.name);          // cached for the daily-programme pick-select
+            const dl = document.getElementById('mechanicDatalist');
+            if (dl) dl.innerHTML = active.map((m) => `<option value="${jcEsc(m.name)}">`).join('');
+        }
+        // All distinct item/consumable names — fills the searchable datalist used by
+        // the job modal's Item/part and Consumable name fields.
+        async function loadItemNameDatalist() {
+            let data; try { data = await (await fetch('/api/item-names')).json(); } catch (e) { return; }
+            const dl = document.getElementById('jobItemOptions');
+            if (dl) dl.innerHTML = (data.names || []).map((n) => `<option value="${jcEsc(n)}">`).join('');
+        }
+        function openMechanicsModal() { const m = document.getElementById('mechanicsModal'); if (m) m.classList.remove('hidden'); renderMechanicsList(); }
+        function closeMechanicsModal() { const m = document.getElementById('mechanicsModal'); if (m) m.classList.add('hidden'); }
+        async function renderMechanicsList() {
+            const body = document.getElementById('mechanicsListBody'); if (!body) return;
+            let data; try { data = await (await fetch('/api/mechanics')).json(); } catch (e) { return; }
+            body.innerHTML = (data.mechanics || []).map((m) => `
+                <div class="flex items-center gap-2">
+                    <span class="flex-grow text-sm font-semibold text-slate-700 dark:text-slate-300 ${m.active ? '' : 'line-through opacity-50'}">${jcEsc(m.name)}</span>
+                    <input id="mrate-${m.id}" type="number" step="any" value="${m.hourlyRate == null ? '' : m.hourlyRate}" placeholder="—" class="w-24 px-2 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-semibold text-right focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                    <button onclick="saveMechanic(${m.id}, ${m.active ? 1 : 0})" class="px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700">Save</button>
+                </div>`).join('') || '<div class="text-sm text-slate-400">No mechanics.</div>';
+        }
+        async function saveMechanic(id, active) {
+            const rate = document.getElementById('mrate-' + id).value;
+            try { await fetch('/api/mechanics/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hourlyRate: rate, active }) }); await loadMechanicDatalist(); } catch (e) {}
+        }
+        async function addMechanic() {
+            const name = document.getElementById('newMechName').value;
+            const rate = document.getElementById('newMechRate').value;
+            if (!name.trim()) return;
+            try {
+                const res = await fetch('/api/mechanics', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, hourlyRate: rate }) });
+                if (res.ok) { document.getElementById('newMechName').value = ''; document.getElementById('newMechRate').value = ''; renderMechanicsList(); loadMechanicDatalist(); }
+                else { const d = await res.json(); alert(d.error || 'Could not add.'); }
+            } catch (e) {}
+        }
+
+        // Populate mechanic + item-name datalists once the page is ready.
+        function loadJobModalLookups() { loadMechanicDatalist(); loadItemNameDatalist(); }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', loadJobModalLookups);
+        else loadJobModalLookups();
+    </script>
+
+    <!-- Job <-> MRN/GRN linkage module (Phase 4) -->
+    <script>
+        let jcCurrentVehicle = '';
+        function renderJobMrns(jc) {
+            const mount = document.getElementById('jcMrnMount');
+            if (!mount) return;
+            jcCurrentVehicle = jc.vehicleMachinery || '';
+            const items = jc.linkedItems || [];
+            const rows = items.map((it) => {
+                const rowCls = it.notReceived ? 'bg-amber-50/70 dark:bg-amber-950/10' : '';
+                const badges =
+                    (it.notReceived ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wider bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">Pending ${it.recQty || 0}/${it.reqQty || 0}</span>` : '') +
+                    (it.unpriced ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase tracking-wider bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400">No price</span>` : '');
+                return `
+                <div class="flex items-start justify-between gap-3 py-2.5 px-2 -mx-2 rounded-lg border-b border-slate-100 dark:border-slate-800/60 last:border-0 ${rowCls}">
+                    <div class="min-w-0">
+                        <div class="text-xs font-bold text-slate-700 dark:text-slate-200">${jcEsc(it.mrnNum || '—')} · ${jcEsc(it.itemName || '')}</div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">Received ${it.recQty || 0} of ${it.reqQty || 0} ${badges}</div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="text-xs font-extrabold ${it.lineCost > 0 ? 'text-slate-700 dark:text-slate-200' : 'text-slate-400'}">${it.lineCost > 0 ? jcCur(it.lineCost) : '—'}</span>
+                        <button onclick="unlinkItem(${it.id}, ${jc.id})" class="text-[11px] font-bold text-rose-500">Unlink</button>
+                    </div>
+                </div>`;
+            }).join('');
+            const counts =
+                (jc.pendingCount ? ` · <span class="text-amber-600">${jc.pendingCount} pending</span>` : '') +
+                (jc.unpricedItems ? ` · <span class="text-rose-500">${jc.unpricedItems} no price</span>` : '');
+            mount.innerHTML = `
+                <div class="mb-5 rounded-2xl border border-slate-150 dark:border-slate-800 overflow-hidden">
+                    <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-150 dark:border-slate-800">
+                        <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Items / Parts (${items.length})${counts}</span>
+                        <span class="text-xs font-bold text-slate-600 dark:text-slate-300">Parts: ${jcCur(jc.partsCost || 0)}</span>
+                    </div>
+                    <div class="px-4 py-2">${rows || '<div class="py-3 text-xs text-slate-400 italic">No items linked yet.</div>'}</div>
+                    <div class="px-4 py-3 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800">
+                        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Add item</div>
+                        <div class="grid grid-cols-12 gap-2">
+                            <input id="jiName" list="jobItemOptions" placeholder="Item / part name" class="col-span-12 sm:col-span-5 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jiQty" type="number" step="any" min="0" value="1" placeholder="Qty" class="col-span-4 sm:col-span-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jiPrice" type="number" step="any" min="0" placeholder="Unit Rs. (optional)" class="col-span-5 sm:col-span-3 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <button onclick="addJobItem(${jc.id})" class="col-span-3 sm:col-span-2 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Add</button>
+                        </div>
+                        <div id="jiError" class="hidden mt-2 text-xs font-semibold text-rose-500"></div>
+                    </div>
+                    <div class="px-4 py-3 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800 flex flex-wrap gap-2 items-center">
+                        <select id="jcLinkMrnInput" class="flex-grow px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <option value="">— Select an MRN to link —</option>
+                        </select>
+                        <button onclick="linkMrnToJob(${jc.id})" class="px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Link MRN</button>
+                        <button onclick="autoLinkJob(${jc.id})" class="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700" title="Pull in all items/issues dated within this job (start −2d … end +2d)">Auto-link matching</button>
+                    </div>
+                    <div id="jcLinkMrnError" class="hidden px-4 pb-3 text-xs font-semibold text-rose-500"></div>
+                </div>`;
+            loadLinkableMrns(jc.id);
+        }
+        // Fill the "Link MRN" select with this job's vehicle's unlinked MRNs.
+        async function loadLinkableMrns(jobCardId) {
+            const sel = document.getElementById('jcLinkMrnInput');
+            if (!sel) return;
+            let data; try { data = await (await fetch('/api/jobcards/' + jobCardId + '/linkable-mrns')).json(); } catch (e) { return; }
+            const opts = (data.mrns || []).map((m) => `<option value="${jcEsc(m.mrnNum)}">${jcEsc(m.mrnNum)}${m.itemName ? ' · ' + jcEsc(m.itemName) : ''}</option>`).join('');
+            sel.innerHTML = `<option value="">${(data.mrns || []).length ? '— Select an MRN to link —' : '— No unlinked MRNs for this vehicle —'}</option>` + opts;
+        }
+        async function addJobItem(jobCardId) {
+            const name = ((document.getElementById('jiName') || {}).value || '').trim();
+            const qty = Number((document.getElementById('jiQty') || {}).value) || 0;
+            const price = (document.getElementById('jiPrice') || {}).value;
+            const err = document.getElementById('jiError');
+            if (err) err.classList.add('hidden');
+            if (!name) { if (err) { err.textContent = 'Item name is required.'; err.classList.remove('hidden'); } return; }
+            try {
+                const today = new Date().toISOString().slice(0, 10);
+                const res = await fetch('/api/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemName: name, reqQty: qty || 1, vehicleMachinery: jcCurrentVehicle, reqDate: today, jobCardId }) });
+                const data = await res.json();
+                if (!res.ok) { if (err) { err.textContent = data.error || 'Could not add item.'; err.classList.remove('hidden'); } return; }
+                if (price && Number(price) > 0) {
+                    await fetch('/api/items/' + data.id + '/receipts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ qty: qty || 1, transactionType: 'Receive', unitPrice: Number(price), deliveryDate: today, purchaseSource: 'Local Store' }) });
+                }
+                openJobCardDetail(jobCardId);
+            } catch (e) { if (err) { err.textContent = 'Network error.'; err.classList.remove('hidden'); } }
+        }
+        async function autoLinkJob(jobCardId) {
+            try {
+                const res = await fetch('/api/jobcards/' + jobCardId + '/auto-link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                await res.json().catch(() => ({}));
+                openJobCardDetail(jobCardId);
+            } catch (e) {}
+        }
+        async function autoLinkAllMrns(btn) {
+            const orig = btn ? btn.innerHTML : '';
+            if (btn) { btn.disabled = true; btn.innerHTML = 'Linking…'; }
+            try {
+                const res = await fetch('/api/jobcards/auto-link-mrns', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) alert(data.error || 'Could not auto-link.');
+                else { alert('Linked ' + data.linked + ' MRNs and ' + (data.issuesLinked || 0) + ' issued items to their jobs by vehicle + date.'); if (typeof renderJobCards === 'function') renderJobCards(); }
+            } catch (e) { alert('Network error.'); }
+            finally { if (btn) { btn.disabled = false; btn.innerHTML = orig; } }
+        }
+        function renderJobIssues(jc) {
+            const mount = document.getElementById('jcIssuesMount');
+            if (!mount) return;
+            const issues = jc.linkedIssues || [];
+            const rows = issues.map((it) => `
+                <div class="flex items-center justify-between gap-3 py-2 border-b border-slate-100 dark:border-slate-800/60 last:border-0">
+                    <div class="min-w-0">
+                        <div class="text-xs font-bold text-slate-700 dark:text-slate-200">${jcEsc(it.itemName || '—')}</div>
+                        <div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">${jcDate(it.issueDateISO)}${it.category ? ' · ' + jcEsc(it.category) : ''}</div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="text-xs font-extrabold text-slate-700 dark:text-slate-200">Qty ${it.qty || 0}</span>
+                        <button onclick="unlinkIssue(${it.id}, ${jc.id})" class="text-[11px] font-bold text-rose-500">Unlink</button>
+                    </div>
+                </div>`).join('');
+            mount.innerHTML = `
+                <div class="mb-5 rounded-2xl border border-slate-150 dark:border-slate-800 overflow-hidden">
+                    <div class="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-150 dark:border-slate-800">
+                        <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Issued Items / Consumables (${issues.length})</span>
+                        <span class="text-[10px] font-semibold text-slate-400">qty only · not in cost</span>
+                    </div>
+                    <div class="px-4 py-2">${rows || '<div class="py-3 text-xs text-slate-400 italic">No issued items linked yet.</div>'}</div>
+                    <div class="px-4 py-3 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800">
+                        <div class="grid grid-cols-12 gap-2">
+                            <input id="jisName" list="jobItemOptions" placeholder="Issue a consumable to this job…" class="col-span-12 sm:col-span-7 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <input id="jisQty" type="number" step="any" min="0" value="1" placeholder="Qty" class="col-span-6 sm:col-span-3 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40">
+                            <button onclick="addJobIssue(${jc.id})" class="col-span-6 sm:col-span-2 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-indigo-700 text-white text-xs font-bold">Issue</button>
+                        </div>
+                        <div id="jisError" class="hidden mt-2 text-xs font-semibold text-rose-500"></div>
+                    </div>
+                    <div class="px-4 py-2.5 bg-slate-50/60 dark:bg-slate-800/20 border-t border-slate-150 dark:border-slate-800 flex justify-end">
+                        <button onclick="autoLinkJob(${jc.id})" class="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700" title="Pull in all items/issues dated within this job (start −2d … end +2d)">Auto-link matching</button>
+                    </div>
+                </div>`;
+        }
+        async function addJobIssue(jobCardId) {
+            const name = ((document.getElementById('jisName') || {}).value || '').trim();
+            const qty = Number((document.getElementById('jisQty') || {}).value) || 0;
+            const err = document.getElementById('jisError'); if (err) err.classList.add('hidden');
+            if (!name) { if (err) { err.textContent = 'Item name is required.'; err.classList.remove('hidden'); } return; }
+            try {
+                const today = new Date().toISOString().slice(0, 10);
+                const res = await fetch('/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itemName: name, qty: qty || 1, vehicleMachinery: jcCurrentVehicle, issueDate: today, jobCardId }) });
+                const data = await res.json();
+                if (!res.ok) { if (err) { err.textContent = data.error || 'Could not add.'; err.classList.remove('hidden'); } return; }
+                openJobCardDetail(jobCardId);
+            } catch (e) { if (err) { err.textContent = 'Network error.'; err.classList.remove('hidden'); } }
+        }
+        async function unlinkIssue(issueId, jobCardId) {
+            try { await fetch('/api/issues/' + issueId + '/link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobCardId: null }) }); openJobCardDetail(jobCardId); } catch (e) {}
+        }
+        async function linkMrnToJob(jobCardId) {
+            const input = document.getElementById('jcLinkMrnInput');
+            const err = document.getElementById('jcLinkMrnError');
+            const mrnNum = ((input && input.value) || '').trim();
+            if (!mrnNum) return;
+            try {
+                const res = await fetch('/api/jobcards/' + jobCardId + '/link-mrn', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mrnNum }) });
+                const data = await res.json();
+                if (!res.ok) { if (err) { err.textContent = data.error || 'Could not link.'; err.classList.remove('hidden'); } return; }
+                openJobCardDetail(jobCardId);
+            } catch (e) { if (err) { err.textContent = 'Network error.'; err.classList.remove('hidden'); } }
+        }
+        async function unlinkItem(itemId, jobCardId) {
+            try { await fetch('/api/items/' + itemId + '/link', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobCardId: null }) }); openJobCardDetail(jobCardId); } catch (e) {}
+        }
+        async function populateJobLinkSelect() {
+            const sel = document.getElementById('jcLinkSelect'); if (!sel) return;
+            let data; try { data = await (await fetch('/api/jobcards?limit=300')).json(); } catch (e) { return; }
+            const active = (data.jobcards || []).filter((j) => j.status !== 'CLOSED');
+            const cur = sel.value;
+            sel.innerHTML = '<option value="">— No job card —</option>' + active.map((j) => `<option value="${j.id}">${jcEsc(j.jobNo)} · ${jcEsc(j.vehicleMachinery || '')}</option>`).join('');
+            sel.value = cur;
+        }
+    </script>
+
+    <!-- Unified Command Centre dashboard module (Phase 5) -->
+    <script>
+        let dashSupplierChartInstance = null;
+        let dashDebTimer = null;
+        let dashCatsLoaded = false;
+        let dashActivePreset = 'all';
+        const DASH_COLORS = ['#12b389', '#0d906e', '#32cc9e', '#0b7c5e', '#67e2ba', '#105945', '#a0f0d4', '#0e7055', '#cff9ea', '#114a3a', '#94a3b8', '#cbd5e1'];
+        const dMonthStart = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`; };
+        const dYearStart = () => `${new Date().getFullYear()}-01-01`;
+        const dToday = () => new Date().toISOString().slice(0, 10);
+        const dCur = (n) => (typeof formatCurrency === 'function') ? formatCurrency(n) : ('Rs. ' + Number(n || 0).toLocaleString());
+
+        async function loadDashCategories() {
+            if (dashCatsLoaded) return; dashCatsLoaded = true;
+            try {
+                const data = await (await fetch('/api/categories')).json();
+                const sel = document.getElementById('dashCategory'); if (!sel) return;
+                (data.categories || []).forEach((c) => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+            } catch (e) { dashCatsLoaded = false; }
+        }
+        function dashSetPresetUI() {
+            ['Month', 'Year', 'All'].forEach((p) => {
+                const el = document.getElementById('dashPreset' + p); if (!el) return;
+                const on = dashActivePreset === p.toLowerCase();
+                el.className = 'dash-preset px-3 py-2 text-xs font-bold ' + (on ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300') + (p !== 'Month' ? ' border-l border-slate-200 dark:border-slate-700' : '');
+            });
+        }
+        function dashPreset(p) {
+            const start = document.getElementById('dashStart'), end = document.getElementById('dashEnd');
+            if (p === 'month') { start.value = dMonthStart(); end.value = dToday(); }
+            else if (p === 'year') { start.value = dYearStart(); end.value = dToday(); }
+            else { start.value = ''; end.value = ''; }
+            dashActivePreset = p; dashSetPresetUI(); renderUnifiedDashboard();
+        }
+        function dashClearPreset() { dashActivePreset = null; dashSetPresetUI(); }
+        function dashReset() {
+            ['dashStart', 'dashEnd', 'dashSource', 'dashCategory', 'dashVehicle', 'dashSupplier'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+            dashActivePreset = 'all'; dashSetPresetUI(); renderUnifiedDashboard();
+        }
+        function dashDebounced() { clearTimeout(dashDebTimer); dashDebTimer = setTimeout(renderUnifiedDashboard, 350); }
+
+        function dashQuery() {
+            const g = (id) => (document.getElementById(id) || {}).value || '';
+            const q = new URLSearchParams();
+            if (g('dashStart')) q.set('startDate', g('dashStart'));
+            if (g('dashEnd')) q.set('endDate', g('dashEnd'));
+            if (g('dashSource')) q.set('source', g('dashSource'));
+            if (g('dashCategory')) q.set('category', g('dashCategory'));
+            if (g('dashVehicle')) q.set('vehicle', g('dashVehicle').trim());
+            if (g('dashSupplier')) q.set('supplier', g('dashSupplier').trim());
+            return q;
+        }
+
+        async function renderUnifiedDashboard() {
+            loadDashCategories();
+            dashSetPresetUI();
+            let o; try { o = await (await fetch('/api/dashboard?' + dashQuery().toString())).json(); } catch (e) { return; }
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+            set('kpiMtd', dCur(o.spend.mtd));
+            set('kpiYtd', dCur(o.spend.ytd));
+            const hasRange = !!(o.filters.startDate || o.filters.endDate);
+            set('kpiPeriodLabel', hasRange ? 'Spend · Selected Period' : 'Spend · All Time');
+            set('kpiPeriod', dCur(o.spend.period));
+            set('kpiJobs', o.jobs.active);
+            set('kpiJobCost', dCur(o.jobs.totalCost));
+
+            // Local vs Head Office split
+            const rc = o.received; const tot = rc.total || 0;
+            const pct = (v) => tot > 0 ? Math.round((v / tot) * 100) : 0;
+            const bHo = document.getElementById('dashBarHo'), bLo = document.getElementById('dashBarLocal'), bOt = document.getElementById('dashBarOther');
+            if (bHo) bHo.style.width = pct(rc.headOffice) + '%';
+            if (bLo) bLo.style.width = pct(rc.local) + '%';
+            if (bOt) bOt.style.width = pct(rc.other) + '%';
+            set('dashHo', dCur(rc.headOffice)); set('dashLocal', dCur(rc.local)); set('dashOther', dCur(rc.other));
+
+            // Supplier distribution
+            const sup = o.suppliers || [];
+            const listEl = document.getElementById('dashSupplierList');
+            if (listEl) listEl.innerHTML = sup.length ? sup.slice(0, 6).map((s, i) => `
+                <div class="flex items-center justify-between gap-2 text-xs">
+                    <span class="flex items-center gap-1.5 min-w-0"><span class="w-2 h-2 rounded-full shrink-0" style="background:${DASH_COLORS[i % DASH_COLORS.length]}"></span><span class="font-semibold text-slate-600 dark:text-slate-300 truncate">${jcEsc(s.supplier)}</span></span>
+                    <span class="font-bold text-slate-800 dark:text-slate-100 shrink-0">${dCur(s.spend)} <span class="text-slate-400 font-semibold">${s.pct}%</span></span>
+                </div>`).join('') : '<div class="text-xs text-slate-400 italic">No priced receipts in range.</div>';
+            const ctx = document.getElementById('dashSupplierChart');
+            if (ctx && typeof Chart !== 'undefined') {
+                if (dashSupplierChartInstance) dashSupplierChartInstance.destroy();
+                dashSupplierChartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: { labels: sup.map((s) => s.supplier), datasets: [{ data: sup.map((s) => s.spend), backgroundColor: sup.map((s, i) => DASH_COLORS[i % DASH_COLORS.length]), borderWidth: 0 }] },
+                    options: { responsive: true, maintainAspectRatio: false, cutout: '64%', plugins: { legend: { display: false } } }
+                });
+            }
+
+            // Daily split table
+            const body = document.getElementById('dashDailyBody');
+            const daily = o.daily || [];
+            if (body) body.innerHTML = daily.length ? daily.map((d) => `
+                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                    <td class="px-6 py-2.5 font-bold text-slate-700 dark:text-slate-200">${jcDate(d.day)}</td>
+                    <td class="px-6 py-2.5 text-right text-indigo-700 dark:text-indigo-400 font-semibold">${d.headOffice ? dCur(d.headOffice) : '—'}</td>
+                    <td class="px-6 py-2.5 text-right text-emerald-600 dark:text-emerald-400 font-semibold">${d.local ? dCur(d.local) : '—'}</td>
+                    <td class="px-6 py-2.5 text-right text-slate-500 font-semibold">${d.other ? dCur(d.other) : '—'}</td>
+                    <td class="px-6 py-2.5 text-right font-extrabold text-slate-900 dark:text-white">${dCur(d.total)}</td>
+                </tr>`).join('') : '<tr><td colspan="5" class="px-6 py-8 text-center text-sm font-semibold text-slate-400">No received deliveries in range.</td></tr>';
+            const hint = document.getElementById('dashDailyHint');
+            if (hint) hint.textContent = daily.length ? `${daily.length} day${daily.length !== 1 ? 's' : ''}` : '';
+        }
+    </script>
+
+    <!-- Auth wiring for the unified Workshop + Stores system -->
+    <script>
+        (function () {
+            // Any API call that reports an expired/missing session sends us back to login.
+            const _fetch = window.fetch;
+            window.fetch = function (...args) {
+                return _fetch.apply(this, args).then((res) => {
+                    if (res && res.status === 401) { window.location.href = '/login'; }
+                    return res;
+                });
+            };
+            const initials = (name, username) => {
+                const base = (name || username || '?').trim();
+                const parts = base.split(/\s+/).filter(Boolean);
+                const a = (parts[0] || '?')[0] || '?';
+                const b = parts.length > 1 ? (parts[parts.length - 1][0] || '') : '';
+                return (a + b).toUpperCase();
+            };
+            const titleCase = (s) => String(s || '').replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+            fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then((data) => {
+                if (!data || !data.user) return;
+                const u = data.user;
+                const av = document.getElementById('userAvatar');
+                const nm = document.getElementById('userName');
+                const rl = document.getElementById('userRole');
+                if (av) av.textContent = initials(u.name, u.username);
+                if (nm) nm.textContent = u.name || u.username;
+                if (rl) rl.textContent = (u.roles && u.roles[0]) ? titleCase(u.roles[0]) : '';
+            }).catch(() => {});
+        })();
+
+        function toggleUserDropdown() {
+            const d = document.getElementById('userDropdown');
+            if (d) d.classList.toggle('hidden');
+        }
+        document.addEventListener('click', function (e) {
+            const c = document.getElementById('userMenuContainer');
+            const d = document.getElementById('userDropdown');
+            if (c && d && !c.contains(e.target)) d.classList.add('hidden');
+        });
+        async function logout() {
+            try { await fetch('/api/logout', { method: 'POST' }); } catch (_) {}
+            window.location.href = '/login';
         }
     </script>
 </body>
